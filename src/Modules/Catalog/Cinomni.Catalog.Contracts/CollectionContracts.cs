@@ -1,4 +1,4 @@
-using Cinomni.Kernel.Identifiers;
+﻿using Cinomni.Kernel.Identifiers;
 using Cinomni.Kernel.Results;
 using Cinomni.Kernel.Security;
 
@@ -32,13 +32,72 @@ public enum CollectionAccessMode
 }
 
 /// <summary>A collection as listed: what it is, who may see it, and how much it holds.</summary>
+/// <summary>
+/// The closed vocabulary of work fields a collection rule may match on.
+/// <para>
+/// Availability, status and episode counts are deliberately absent. A rule over them would move a
+/// work between collections as a side effect of a download finishing — and a collection decides who
+/// may see a work, so a restricted shelf that opens itself when an episode lands would be a security
+/// failure wearing the shape of a feature.
+/// </para>
+/// </summary>
+public enum CollectionRuleField
+{
+    Kind = 1,
+    Genre = 2,
+    ContentRating = 3,
+    Year = 4,
+    RuntimeMinutes = 5,
+    OriginalLanguage = 6,
+    Title = 7,
+}
+
+/// <summary>How a condition compares. Which of these a field accepts is fixed; see the validator.</summary>
+public enum CollectionRuleOperator
+{
+    Is = 1,
+    IsNot = 2,
+    AtLeast = 3,
+    AtMost = 4,
+    Contains = 5,
+    StartsWith = 6,
+}
+
+/// <summary>
+/// One condition of a rule. <see cref="Values"/> are alternatives: the condition holds when the work
+/// satisfies any of them. Everything travels as a string, including numbers, and the backend parses
+/// per field — one wire shape, and an unparseable value is refused when the rule is saved rather than
+/// silently matching nothing months later.
+/// </summary>
+public sealed record CollectionRuleCondition(
+    CollectionRuleField Field,
+    CollectionRuleOperator Operator,
+    IReadOnlyList<string> Values);
+
+/// <summary>
+/// A named set of conditions that all have to hold. Anyone needing "or" across different fields
+/// writes a second rule; there is no nesting, which is what keeps the vocabulary one a validator can
+/// fully understand and a rule builder can offer without proposing what the API would reject.
+/// </summary>
+public sealed record CollectionRule(
+    Guid Id,
+    CollectionId CollectionId,
+    string Name,
+    IReadOnlyList<CollectionRuleCondition> Conditions);
+
+/// <param name="RulePriority">
+/// Evaluation order across the installation; lower goes first, and the first rule that matches claims
+/// the work. It exists because a work lives in exactly one collection, so two rules matching the same
+/// work need a settled answer rather than whichever query returned first.
+/// </param>
 public sealed record CollectionSummary(
     CollectionId Id,
     string Name,
     CollectionKind Kind,
     CollectionAccessMode AccessMode,
     bool IsDefault,
-    int WorkCount);
+    int WorkCount,
+    int RulePriority = 0);
 
 /// <summary>
 /// The one authority on "may this account see this work". Catalog owns it because Catalog owns all three
