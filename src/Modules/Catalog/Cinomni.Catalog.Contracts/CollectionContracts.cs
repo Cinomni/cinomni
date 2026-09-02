@@ -32,6 +32,47 @@ public enum CollectionAccessMode
 }
 
 /// <summary>A collection as listed: what it is, who may see it, and how much it holds.</summary>
+// THE AGREED CONTRACT FOR RULE-BASED COLLECTIONS. Recorded beside the engine because the engine is
+// built and the surface around it is not. Every point below was settled before implementation and
+// should not be re-derived.
+//
+// - A work lives in exactly one collection, and a collection decides who may see it. Rules therefore
+//   do not produce overlapping views: they decide the single collection a work belongs to. Moving a
+//   work by rule is a permissions change wearing the shape of an organising one.
+//
+// - Order is global and deterministic. Rules hang off collections; CollectionSummary.RulePriority
+//   fixes evaluation order across the installation, and the first rule that matches claims the work.
+//
+// - A work no rule claims returns to the default collection, unless it is pinned. If a rule placed
+//   it, rules govern it: leaving it on a shelf whose own rules exclude it would make "why is this
+//   here" unanswerable. The default collection is open, so this case is an exposure event, and any
+//   preview has to show it — it is the one nobody anticipates, because it comes from a work ceasing
+//   to match rather than from anyone moving it.
+//
+// - A manual move pins the work, and rules stop touching it until it is unpinned. An override the
+//   next sweep undoes is not an override.
+//
+// - The work records which rule placed it. That answer decides who sees it, so it is persisted
+//   rather than logged, on the same reasoning as Decision's evaluations.
+//
+// - Preview before saving, for both writes. Saving rules and reordering priority can each relocate
+//   hundreds of works and change who sees them. The preview reports what would move, what is pinned
+//   and therefore will not, and where each work would end up. Reordering earns this as much as
+//   editing does — arguably more, since it only affects works matched by more than one collection,
+//   which is precisely the set nobody can see.
+//
+// - Re-evaluation runs on work added, on metadata enrichment, and on any rule or order change.
+//   Enrichment is not optional: genres arrive after the work does, so a rule on genre would never
+//   match without it. The bulk sweep has to be recoverable and batched, never one unprotected
+//   transaction across the library.
+//
+// - The surface, administrator only: GET and PUT /api/catalog/collections/{id}/rules; PUT
+//   /api/catalog/collections/rule-priority, taking the complete ordered list so ties are impossible
+//   and no intermediate order is ever visible; POST on both of those with /preview; PUT
+//   /api/catalog/works/{id}/collection, which moves and pins; DELETE
+//   /api/catalog/works/{id}/collection-pin. A preview answers matched, wouldMove, pinnedSkipped and
+//   the works themselves with their current and target collection.
+
 /// <summary>
 /// The closed vocabulary of work fields a collection rule may match on.
 /// <para>
