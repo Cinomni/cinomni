@@ -4,6 +4,7 @@ import { Navigate, useParams } from 'react-router'
 import { catalogApi, metadataApi } from '@/api/endpoints'
 import type { MonitoringMode, NextUpEpisode, Work } from '@/api/types'
 import { useAuth } from '@/auth/useAuth'
+import { AwaitingMetadataNotice } from '@/components/media/AwaitingMetadataNotice'
 import { MediaHero } from '@/components/media/MediaHero'
 import { primaryActionFor } from '@/components/media/primaryAction'
 import { WorkAvailability, WorkEyebrow } from '@/components/media/WorkFacts'
@@ -268,6 +269,7 @@ function SeriesHero({
         )
       }
     >
+      <AwaitingMetadataNotice work={work} />
       {refresh.isError && (
         <Alert tone="danger" className="mt-4">
           {errorMessage(refresh.error, 'Could not queue a metadata refresh for this show.')}

@@ -37,12 +37,25 @@ public sealed class Work
     /// </summary>
     public Guid? PlacedByRuleId { get; private set; }
 
-    /// <summary>Puts the work on a collection by hand and pins it there.</summary>
+    /// <summary>
+    /// Whether the work is held back from everyone but administrators until its metadata arrives. Set
+    /// when a work is added while rules exist: the rules can only read kind, title and year at that
+    /// point, so a rule on genre or age rating that would put it on a restricted shelf cannot fire yet,
+    /// and without the hold the title would sit on the open default shelf in the meantime. Released by
+    /// the first metadata snapshot, which re-places it, or by an administrator placing it by hand.
+    /// </summary>
+    public bool AwaitingMetadata { get; private set; }
+
+    /// <summary>Holds the work back until metadata arrives (see <see cref="AwaitingMetadata"/>).</summary>
+    public void HoldForMetadata() => AwaitingMetadata = true;
+
+    /// <summary>Puts the work on a collection by hand and pins it there, which also releases any hold.</summary>
     public void PinTo(Guid collectionId)
     {
         CollectionId = collectionId;
         CollectionPinned = true;
         PlacedByRuleId = null;
+        AwaitingMetadata = false;
     }
 
     /// <summary>
@@ -223,6 +236,9 @@ public sealed class Work
 
         UpdateArtwork(posterUrl, backdropUrl);
         MetadataSnapshotId = snapshotId;
+
+        // The facts the rules were waiting for are here now; the caller re-places the work in this write.
+        AwaitingMetadata = false;
     }
 
     /// <summary>

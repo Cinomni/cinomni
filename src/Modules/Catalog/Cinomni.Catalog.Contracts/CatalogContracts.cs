@@ -103,7 +103,8 @@ public sealed record WorkSummary(
     CollectionId? Collection = null,
     string? Overview = null,
     int? RuntimeMinutes = null,
-    IReadOnlyList<string>? Genres = null);
+    IReadOnlyList<string>? Genres = null,
+    bool AwaitingMetadata = false);
 
 /// <summary>
 /// One page of works, with <see cref="Total"/> counting every work the viewer may see under the same filter —

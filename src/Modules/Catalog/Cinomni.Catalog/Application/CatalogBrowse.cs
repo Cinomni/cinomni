@@ -153,5 +153,6 @@ public sealed class CatalogBrowse(CatalogDbContext dbContext, ContentAccess acce
         new CollectionId(work.CollectionId),
         work.Overview,
         work.RuntimeMinutes,
-        work.Genres);
+        work.Genres,
+        work.AwaitingMetadata);
 }

@@ -12,8 +12,9 @@ namespace Cinomni.Catalog.Application;
 /// exactly one definition of "may see" to get right and to test.
 /// <para>
 /// A viewer sees a collection when they administer the installation, when the collection is
-/// <see cref="CollectionAccessMode.Open"/>, or when they hold a grant. Unknown works answer false: not
-/// found and not yours must be indistinguishable, or a 404 becomes an oracle.
+/// <see cref="CollectionAccessMode.Open"/>, or when they hold a grant — and, unless they administer it,
+/// only once the work is no longer held for its metadata. Unknown works answer false: not found and not
+/// yours must be indistinguishable, or a 404 becomes an oracle.
 /// </para>
 /// </summary>
 public sealed class ContentAccess(CatalogDbContext dbContext, IContentRatingRegion region) : IContentAccess
@@ -55,7 +56,11 @@ public sealed class ContentAccess(CatalogDbContext dbContext, IContentRatingRegi
             return dbContext.Works;
         }
 
-        var query = dbContext.Works.Where(w => VisibleCollectionIds(viewer).Contains(w.CollectionId));
+        // A work held for its metadata is not visible to members wherever it provisionally sits: the rules
+        // that would restrict it cannot read its genres or rating yet.
+        var query = dbContext.Works
+            .Where(w => !w.AwaitingMetadata)
+            .Where(w => VisibleCollectionIds(viewer).Contains(w.CollectionId));
         // Certificates strictly above the ceiling. Empty means the ceiling does not apply — no region,
         // a region change, or no ceiling at all — and an unrated or unrecognised label is not in the
         // list, so it stays visible. Hiding those would hide most of a library the day the control is on.

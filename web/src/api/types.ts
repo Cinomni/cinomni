@@ -142,6 +142,11 @@ export interface Work {
   episodeCount: number
   availableEpisodeCount: number
   collectionId: string | null
+  /**
+   * Held back from members until its metadata arrives: it was added while collection rules exist, and
+   * they cannot read its genres or rating yet. Only an administrator ever receives `true`.
+   */
+  awaitingMetadata: boolean
   externalIds: ExternalIdDto[]
   /**
    * The provider's synopsis. Served by the **detail** route only — the list routes answer for a whole

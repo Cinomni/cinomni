@@ -49,8 +49,14 @@ public sealed class CollectionPlacementService(
     /// <summary>
     /// Places a work that is not yet saved — a new one being added — without saving: the caller's own
     /// insert carries it, so the work is never visible on one shelf before being placed on another.
+    /// <para>
+    /// While any rule exists, a work that is going to be enriched (<paramref name="expectsMetadata"/>)
+    /// is also held back from everyone but administrators until that happens: the rules cannot yet see
+    /// its genres or its rating, so where it sits now is only provisional. A work nothing will ever
+    /// enrich is placed on what is known and not held, or it would be hidden for good.
+    /// </para>
     /// </summary>
-    public async Task PlaceNewAsync(Work work, CancellationToken cancellationToken = default)
+    public async Task PlaceNewAsync(Work work, bool expectsMetadata, CancellationToken cancellationToken = default)
     {
         if (work.CollectionPinned)
         {
@@ -60,6 +66,11 @@ public sealed class CollectionPlacementService(
         var rules = await LoadAsync(cancellationToken);
         var placement = CollectionPlacement.Place(CollectionPlacement.Facts(work), rules.Ordered, rules.DefaultCollectionId);
         work.PlaceByRule(placement.CollectionId, placement.RuleId);
+
+        if (expectsMetadata && rules.Rules.Count > 0)
+        {
+            work.HoldForMetadata();
+        }
     }
 
     /// <summary>

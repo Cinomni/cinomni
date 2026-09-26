@@ -4,6 +4,7 @@ import { Navigate, useParams } from 'react-router'
 import { catalogApi, libraryApi, metadataApi, monitoringApi, playbackApi } from '@/api/endpoints'
 import type { MediaAssetSummary, MediaVersion, Work } from '@/api/types'
 import { useAuth } from '@/auth/useAuth'
+import { AwaitingMetadataNotice } from '@/components/media/AwaitingMetadataNotice'
 import { MediaHero } from '@/components/media/MediaHero'
 import { MediaStatus } from '@/components/media/MediaStatus'
 import { primaryActionFor } from '@/components/media/primaryAction'
@@ -197,6 +198,7 @@ export function WorkDetailPage() {
           </>
         }
       >
+        <AwaitingMetadataNotice work={work} />
         {monitor.isError && (
           <Alert tone="danger" className="mt-4">
             {errorMessage(monitor.error, 'Could not update monitoring for this title.')}

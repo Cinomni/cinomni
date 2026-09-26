@@ -105,6 +105,24 @@ public sealed class CollectionRuleHttpTests
 
         Assert.Equal(shelf, await CollectionOfAsync(client, alien));
 
+        // Added now that rules exist, a title waits for its metadata; the administrator is told why.
+        WorkId held;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            held = (await scope.ServiceProvider.GetRequiredService<ICatalogCommands>()
+                .AddMovieAsync("Paddington", 2014, [new ExternalId(MetadataProvider.Tmdb, "116149")])).Value;
+        }
+
+        using (var work = JsonDocument.Parse(await client.GetStringAsync($"/api/catalog/works/{held}")))
+        {
+            Assert.True(work.RootElement.GetProperty("awaitingMetadata").GetBoolean());
+        }
+
+        using (var work = JsonDocument.Parse(await client.GetStringAsync($"/api/catalog/works/{alien}")))
+        {
+            Assert.False(work.RootElement.GetProperty("awaitingMetadata").GetBoolean());
+        }
+
         // A move by hand pins; releasing the pin hands the title straight back to the rules.
         var library = await DefaultCollectionIdAsync(client);
         var moved = await client.PutAsJsonAsync($"/api/catalog/works/{alien}/collection", new { collectionId = library });
