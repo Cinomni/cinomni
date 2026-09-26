@@ -26,7 +26,7 @@ flowchart LR
 ```
 
 **The MVP is done.** Milestones M0–M4 are complete and confirmed on linux/amd64, and a good deal of
-post-MVP depth has landed on top. The current version is **0.1.0-alpha.1**, the first
+post-MVP depth has landed on top. The current version is **0.1.0-alpha.2**, the second
 public alpha. See the *Release plan* below for what comes before a stable 1.0.0.
 
 | Milestone | What it delivered | Status |
@@ -46,7 +46,8 @@ criteria are met.
 
 | Version | Stage | What it is | Status |
 |---|---|---|---|
-| **0.1.0-alpha.1** | Alpha | Everything built so far: both slices, the MVP hardening and the post-MVP depth | Current |
+| **0.1.0-alpha.1** | Alpha | Everything built so far: both slices, the MVP hardening and the post-MVP depth | Released |
+| **0.1.0-alpha.2** | Alpha | Rule-based collections, pulled forward from *Next* into 0.1.0 | Current |
 | **0.1.0-alpha.N** | Alpha | Fixes and the gaps below; capabilities may still land | Planned |
 | **0.1.0-beta.1** | Beta | Capabilities frozen for 0.1.0; fixes only from here | When the beta criteria are met |
 | **0.1.0-rc.1** | Release candidate | No known blocker | When the beta has run clean |
