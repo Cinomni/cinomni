@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cinomni.Acquisition.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cinomni.Acquisition.Contracts\Cinomni.Acquisition.Contracts.csproj" />
+    <!-- Event deps (published language, ⇠e): Monitoring's MonitoringEnabled births the goal and
+         Decision's ReleaseSelected feeds it a candidate. Contracts-only references — Acquisition
+         touches neither module's internals, and stays off Catalog (ids travel as raw Guid). -->
+    <ProjectReference Include="..\..\Monitoring\Cinomni.Monitoring.Contracts\Cinomni.Monitoring.Contracts.csproj" />
+    <ProjectReference Include="..\..\Decision\Cinomni.Decision.Contracts\Cinomni.Decision.Contracts.csproj" />
+    <!-- Event dep (⇠e): Downloads reports the attempt back (DownloadStarted/Completed/Failed) to
+         close the acquisition spine. Contracts-only. -->
+    <ProjectReference Include="..\..\Downloads\Cinomni.Downloads.Contracts\Cinomni.Downloads.Contracts.csproj" />
+    <!-- Event dep (⇠e): Import reports the attempt back (ImportCompleted/ImportFailed) to meet or
+         retry the goal. Contracts-only — no assembly cycle (Import references only our Contracts). -->
+    <ProjectReference Include="..\..\Import\Cinomni.Import.Contracts\Cinomni.Import.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

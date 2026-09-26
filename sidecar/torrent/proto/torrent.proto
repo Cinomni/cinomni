@@ -1,0 +1,187 @@
+syntax = "proto3";
+
+package cinomni.torrent.v1;
+
+option csharp_namespace = "Cinomni.Torrent.Grpc";
+
+// Minimal control surface of the libtorrent sidecar. The engine runs as a
+// dedicated process and is consumed over gRPC by the .NET backend. This PoC validates the
+// critical flow: add -> progress -> complete -> restart-with-resume.
+service TorrentService {
+  // Adds a torrent from a magnet URI, a .torrent file, or persisted resume data.
+  rpc AddTorrent(AddTorrentRequest) returns (AddTorrentResponse);
+
+  // One-shot status snapshot.
+  rpc GetStatus(InfoHashRequest) returns (TorrentStatus);
+
+  // Server-streaming status, the analogue of libtorrent's alert stream.
+  rpc StreamStatus(InfoHashRequest) returns (stream TorrentStatus);
+
+  // Persists resume data (the .fastresume checkpoint) so the download survives a restart.
+  rpc SaveResumeData(InfoHashRequest) returns (ResumeData);
+
+  rpc RemoveTorrent(RemoveTorrentRequest) returns (RemoveTorrentResponse);
+
+  // Pauses a torrent for manual control (clears auto_managed so libtorrent won't resume it).
+  rpc PauseTorrent(InfoHashRequest) returns (SimpleResponse);
+
+  // Resumes a paused torrent.
+  rpc ResumeTorrent(InfoHashRequest) returns (SimpleResponse);
+
+  // Sets per-file download priorities (0 = don't download .. 7 = top priority).
+  rpc SetFilePriorities(SetFilePrioritiesRequest) returns (SimpleResponse);
+
+  // Lists the torrent's files with their sizes and current priorities. Empty until a
+  // magnet has resolved its metadata.
+  rpc ListFiles(InfoHashRequest) returns (FileList);
+
+  // PoC-only: generates a random file, makes a .torrent for it, and seeds it from an
+  // internal session so the flow can complete locally without internet or third-party data.
+  rpc CreateTestTorrent(CreateTestTorrentRequest) returns (CreateTestTorrentResponse);
+
+  // Whether this process's traffic is actually leaving through the tunnel it was told to bind.
+  // Answered from a cached observation refreshed on a timer, so polling it is cheap. A sidecar
+  // older than its caller does not implement it and answers UNIMPLEMENTED, which the backend
+  // treats as "unknown", not as "fine" — see TunnelObservation for the field-by-field meaning.
+  rpc GetTunnelHealth(TunnelHealthRequest) returns (TunnelObservation);
+
+  // The operator's override under the pause-and-alert policy: lifts the session-wide egress hold for
+  // the rest of the current outage. The hold re-arms once egress verifies again. Refused with
+  // FAILED_PRECONDITION under any other policy — under block no manual action may put traffic back
+  // on an unverified path.
+  rpc OverrideTunnelHold(TunnelHoldOverrideRequest) returns (SimpleResponse);
+}
+
+message PeerEndpoint {
+  string host = 1;
+  int32 port = 2;
+}
+
+message AddTorrentRequest {
+  oneof source {
+    string magnet_uri = 1;
+    bytes torrent_file = 2;
+    bytes resume_data = 3;
+  }
+  string save_path = 4;
+  // Optional direct peers (used by the PoC to connect to the local seeder).
+  repeated PeerEndpoint peers = 5;
+}
+
+message AddTorrentResponse {
+  string info_hash = 1;
+  string name = 2;
+  // True when the torrent was resumed from checkpoint without a full recheck.
+  bool resumed = 3;
+}
+
+message InfoHashRequest {
+  string info_hash = 1;
+}
+
+message TorrentStatus {
+  string info_hash = 1;
+  string name = 2;
+  string state = 3;
+  float progress = 4;
+  int64 total_done = 5;
+  int64 total_wanted = 6;
+  int32 download_rate = 7;
+  int32 upload_rate = 8;
+  int32 num_peers = 9;
+  int32 num_seeds = 10;
+  bool is_finished = 11;
+  string error = 12;
+  // Cumulative transfer and seeding time, for the .NET-side seeding policy (libtorrent
+  // offers no hard per-torrent cutoff, so the ratio/seed-time gate lives in the backend).
+  int64 all_time_upload = 13;
+  int64 all_time_download = 14;
+  int32 seeding_seconds = 15;
+  bool is_paused = 16;
+  // Paused by the engine's own queue rather than by anyone: waiting for a slot, not stopped.
+  bool is_queued = 17;
+}
+
+message ResumeData {
+  string info_hash = 1;
+  bytes data = 2;
+}
+
+message RemoveTorrentRequest {
+  string info_hash = 1;
+  bool delete_files = 2;
+}
+
+message RemoveTorrentResponse {
+  bool removed = 1;
+}
+
+// Generic outcome for control operations that either succeed or report why they couldn't.
+message SimpleResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+message FilePriorityEntry {
+  int32 file_index = 1;
+  // 0 = don't download, 1 = normal, up to 7 = top priority (libtorrent scale).
+  int32 priority = 2;
+}
+
+message SetFilePrioritiesRequest {
+  string info_hash = 1;
+  repeated FilePriorityEntry priorities = 2;
+}
+
+message TorrentFileEntry {
+  int32 index = 1;
+  string path = 2;
+  int64 size = 3;
+  int32 priority = 4;
+}
+
+message FileList {
+  string info_hash = 1;
+  repeated TorrentFileEntry files = 2;
+}
+
+message CreateTestTorrentRequest {
+  int64 size_bytes = 1;
+  string name = 2;
+}
+
+message CreateTestTorrentResponse {
+  bytes torrent_file = 1;
+  string info_hash = 2;
+  int32 seeder_port = 3;
+}
+
+message TunnelHealthRequest {}
+
+message TunnelHoldOverrideRequest {}
+
+// One observation of where this process's traffic would actually go. Three independent facts,
+// carried separately rather than folded into a single boolean, because they fail for different
+// reasons and an operator whose downloads stopped needs to know which one it was.
+message TunnelObservation {
+  // Empty when no tunnel device is configured — the guard is off and the other fields mean nothing.
+  string tunnel_device = 1;
+  // The device exists and carries an address.
+  bool tunnel_up = 2;
+  // The IPv4 default route leaves through that device.
+  bool default_route_via_tunnel = 3;
+  // The source address the kernel would put on an outbound packet is the tunnel's own address.
+  // This is the leak check: it catches traffic that would leave with the household's identity
+  // while the two facts above still look healthy.
+  bool egress_identity_matches = 4;
+  // A stable machine-readable reason, never a rendered sentence: the backend persists it and the
+  // interface translates it. Empty only when nothing has been observed yet.
+  string reason = 5;
+  // The tunnel-loss policy this process was configured with: block, pause-and-alert or ignore.
+  // Reported so an installation running weaker than the default cannot look like one that is not.
+  string policy = 6;
+  // Whether the libtorrent session is currently held because of this observation.
+  bool session_held = 7;
+  // Unix seconds at which the observation was taken (not when it was asked for).
+  int64 observed_at_unix = 8;
+}

@@ -1,0 +1,98 @@
+<Solution>
+  <Folder Name="/Host/">
+    <Project Path="Host/Cinomni.Host/Cinomni.Host.csproj" />
+  </Folder>
+  <Folder Name="/Modules/" />
+  <Folder Name="/Modules/Catalog/">
+    <Project Path="Modules/Catalog/Cinomni.Catalog.Contracts/Cinomni.Catalog.Contracts.csproj" />
+    <Project Path="Modules/Catalog/Cinomni.Catalog/Cinomni.Catalog.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Metadata/">
+    <Project Path="Modules/Metadata/Cinomni.Metadata.Contracts/Cinomni.Metadata.Contracts.csproj" />
+    <Project Path="Modules/Metadata/Cinomni.Metadata/Cinomni.Metadata.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Identity/">
+    <Project Path="Modules/Identity/Cinomni.Identity.Contracts/Cinomni.Identity.Contracts.csproj" />
+    <Project Path="Modules/Identity/Cinomni.Identity/Cinomni.Identity.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Monitoring/">
+    <Project Path="Modules/Monitoring/Cinomni.Monitoring.Contracts/Cinomni.Monitoring.Contracts.csproj" />
+    <Project Path="Modules/Monitoring/Cinomni.Monitoring/Cinomni.Monitoring.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Discovery/">
+    <Project Path="Modules/Discovery/Cinomni.Discovery.Contracts/Cinomni.Discovery.Contracts.csproj" />
+    <Project Path="Modules/Discovery/Cinomni.Discovery/Cinomni.Discovery.csproj" />
+  </Folder>
+  <Folder Name="/Modules/ReleaseParsing/">
+    <Project Path="Modules/ReleaseParsing/Cinomni.ReleaseParsing.Contracts/Cinomni.ReleaseParsing.Contracts.csproj" />
+    <Project Path="Modules/ReleaseParsing/Cinomni.ReleaseParsing/Cinomni.ReleaseParsing.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Decision/">
+    <Project Path="Modules/Decision/Cinomni.Decision.Contracts/Cinomni.Decision.Contracts.csproj" />
+    <Project Path="Modules/Decision/Cinomni.Decision/Cinomni.Decision.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Acquisition/">
+    <Project Path="Modules/Acquisition/Cinomni.Acquisition.Contracts/Cinomni.Acquisition.Contracts.csproj" />
+    <Project Path="Modules/Acquisition/Cinomni.Acquisition/Cinomni.Acquisition.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Downloads/">
+    <Project Path="Modules/Downloads/Cinomni.Downloads.Contracts/Cinomni.Downloads.Contracts.csproj" />
+    <Project Path="Modules/Downloads/Cinomni.Downloads.Sidecar.Grpc/Cinomni.Downloads.Sidecar.Grpc.csproj" />
+    <Project Path="Modules/Downloads/Cinomni.Downloads/Cinomni.Downloads.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Import/">
+    <Project Path="Modules/Import/Cinomni.Import.Contracts/Cinomni.Import.Contracts.csproj" />
+    <Project Path="Modules/Import/Cinomni.Import/Cinomni.Import.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Library/">
+    <Project Path="Modules/Library/Cinomni.Library.Contracts/Cinomni.Library.Contracts.csproj" />
+    <Project Path="Modules/Library/Cinomni.Library/Cinomni.Library.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Playback/">
+    <Project Path="Modules/Playback/Cinomni.Playback.Contracts/Cinomni.Playback.Contracts.csproj" />
+    <Project Path="Modules/Playback/Cinomni.Playback/Cinomni.Playback.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Subtitles/">
+    <Project Path="Modules/Subtitles/Cinomni.Subtitles.Contracts/Cinomni.Subtitles.Contracts.csproj" />
+    <Project Path="Modules/Subtitles/Cinomni.Subtitles/Cinomni.Subtitles.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Requests/">
+    <Project Path="Modules/Requests/Cinomni.Requests.Contracts/Cinomni.Requests.Contracts.csproj" />
+    <Project Path="Modules/Requests/Cinomni.Requests/Cinomni.Requests.csproj" />
+  </Folder>
+  <Folder Name="/Modules/Notifications/">
+    <Project Path="Modules/Notifications/Cinomni.Notifications.Contracts/Cinomni.Notifications.Contracts.csproj" />
+    <Project Path="Modules/Notifications/Cinomni.Notifications/Cinomni.Notifications.csproj" />
+  </Folder>
+  <Folder Name="/Modules/RealTime/">
+    <Project Path="Modules/RealTime/Cinomni.RealTime/Cinomni.RealTime.csproj" />
+  </Folder>
+  <Folder Name="/Platform/">
+    <Project Path="Platform/Cinomni.Kernel/Cinomni.Kernel.csproj" />
+    <Project Path="Platform/Cinomni.Operations/Cinomni.Operations.csproj" />
+  </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="Shared/Cinomni.Search.Contracts/Cinomni.Search.Contracts.csproj" />
+  </Folder>
+  <Project Path="../tests/Cinomni.Catalog.Tests/Cinomni.Catalog.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Metadata.Tests/Cinomni.Metadata.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Identity.Tests/Cinomni.Identity.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Monitoring.Tests/Cinomni.Monitoring.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Discovery.Tests/Cinomni.Discovery.Tests.csproj" />
+  <Project Path="../tests/Cinomni.ReleaseParsing.Tests/Cinomni.ReleaseParsing.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Decision.Tests/Cinomni.Decision.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Acquisition.Tests/Cinomni.Acquisition.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Downloads.Tests/Cinomni.Downloads.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Import.Tests/Cinomni.Import.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Library.Tests/Cinomni.Library.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Playback.Tests/Cinomni.Playback.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Subtitles.Tests/Cinomni.Subtitles.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Requests.Tests/Cinomni.Requests.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Notifications.Tests/Cinomni.Notifications.Tests.csproj" />
+  <Project Path="../tests/Cinomni.RealTime.Tests/Cinomni.RealTime.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Host.Tests/Cinomni.Host.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Kernel.Tests/Cinomni.Kernel.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Operations.Tests/Cinomni.Operations.Tests.csproj" />
+  <Project Path="../tests/Cinomni.SeriesSlice.Tests/Cinomni.SeriesSlice.Tests.csproj" />
+  <Project Path="../tests/Cinomni.Recovery.Tests/Cinomni.Recovery.Tests.csproj" />
+</Solution>

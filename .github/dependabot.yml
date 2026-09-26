@@ -1,0 +1,79 @@
+# Dependency updates.
+#
+# The workflows pin every action to a commit SHA, which is only safe if something keeps the pins
+# moving; the github-actions ecosystem below is that something. Without it, SHA pinning quietly
+# turns into unpatched actions.
+#
+# Reviewing a bump here is not a rubber stamp. A new or upgraded dependency must carry its licence
+# and provenance record (CONTRIBUTING.md, "Clean-room implementation"), and the matching entry in the compliance
+# documentation has to move with it.
+#
+# Minor and patch updates are grouped into a single pull request per ecosystem and run: the solution
+# shares packages across src/ and tests/, so one grouped update keeps versions consistent instead of
+# racing. A major version is never grouped: each one arrives as its own pull request, because it can
+# change behaviour and is reviewed and migrated on its own (React 19, TypeScript 7 and Vite 8 once
+# arrived in the same pull request as a dozen patch releases).
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      web-dependencies:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  # No packages.lock.json in the repository, so Dependabot reads the PackageReference entries of
+  # every project it finds under the root, in src/ and tests/ alike.
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      dotnet-dependencies:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  # The Debian base image of the libtorrent sidecar, pinned by digest in its Dockerfile.
+  - package-ecosystem: docker
+    directory: /sidecar/torrent
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+
+  # The sidecar's Python dependencies. They are pinned with hashes, and they sit on the code path
+  # that parses hostile torrent metadata off the network, so they need an update channel more than
+  # anything else here — not less.
+  - package-ecosystem: pip
+    directory: /sidecar/torrent
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      sidecar-dependencies:
+        patterns: ['*']
+        update-types: [minor, patch]

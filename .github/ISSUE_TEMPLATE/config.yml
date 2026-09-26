@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Cinomni/cinomni/security/advisories/new
+    about: Report it privately. Never open a public issue for a security problem.
+  - name: Deployment guide
+    url: https://github.com/Cinomni/cinomni/blob/main/DEPLOYMENT.md
+    about: Storage, networking, VPN, transcoding and GPUs.

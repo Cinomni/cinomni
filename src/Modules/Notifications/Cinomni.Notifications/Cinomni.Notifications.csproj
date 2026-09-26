@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cinomni.Notifications.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cinomni.Notifications.Contracts\Cinomni.Notifications.Contracts.csproj" />
+    <!-- Event deps (⇠e): reacts to Import's MediaAvailable, Acquisition's AcquisitionFailed,
+         Metadata's ProviderDegraded, Requests' MediaRequested and Downloads' tunnel-egress pair.
+         Interface dep (→i): resolves a work's title from Catalog. Contracts-only — never mutates
+         another module's tables. -->
+    <ProjectReference Include="..\..\Import\Cinomni.Import.Contracts\Cinomni.Import.Contracts.csproj" />
+    <ProjectReference Include="..\..\Downloads\Cinomni.Downloads.Contracts\Cinomni.Downloads.Contracts.csproj" />
+    <ProjectReference Include="..\..\Acquisition\Cinomni.Acquisition.Contracts\Cinomni.Acquisition.Contracts.csproj" />
+    <ProjectReference Include="..\..\Metadata\Cinomni.Metadata.Contracts\Cinomni.Metadata.Contracts.csproj" />
+    <ProjectReference Include="..\..\Catalog\Cinomni.Catalog.Contracts\Cinomni.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\Requests\Cinomni.Requests.Contracts\Cinomni.Requests.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

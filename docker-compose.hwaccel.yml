@@ -1,0 +1,63 @@
+# Opt-in VAAPI/QSV overlay: Intel and AMD hardware transcoding via /dev/dri. Never applied by default.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.hwaccel.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.hwaccel.yml up -d
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS DOES, AND WHAT IT DOES NOT
+# ---------------------------------------------------------------------------
+# Runs the `-hwaccel` image (the Dockerfile's `runtime-hwaccel` target) instead of the base one, the
+# same image plus the VAAPI userspace drivers, and passes the host's render node through as a device. Nothing
+# about the application changes: the probe that runs at every start
+# (StartupChecks.ReportHardwareCapabilitiesAsync) decides on its own whether VAAPI or QSV is actually
+# usable from there, exactly as it does without this overlay. Applying it makes hardware transcoding
+# POSSIBLE; it does not force it — the planner still falls back to software for any request the
+# detected backend cannot serve (a bounded, one-time retry — TranscodeJob.FellBackToSoftware records
+# it when it happens), and an operator can turn hardware transcoding off entirely from
+# Console → Settings without removing the overlay.
+#
+# The driver packages this target installs serve decode as well as encode, but the two stay separate
+# decisions: the encode half is used whenever the probe found the backend, while decode only
+# accelerates for a session whose own source codec the probe also found an explicit hardware decoder
+# for. A source codec it did not gets an accelerated encode fed by a software decode, said out loud on
+# PlaybackPlan.DecodeAccelerated rather than left to be inferred. DEPLOYMENT.md section 9 has the
+# whole decision order.
+#
+# It does NOT do anything for NVIDIA GPUs. NVENC has nothing to do with /dev/dri and needs the
+# separate docker-compose.nvidia.yml overlay (and nvidia-container-toolkit on the host) instead.
+#
+# ---------------------------------------------------------------------------
+# BEFORE YOU APPLY IT
+# ---------------------------------------------------------------------------
+# 1. Confirm the render node exists on the host:
+#      ls -l /dev/dri
+#    should show at least one `renderD1xx` entry. With more than one GPU, the default
+#    (/dev/dri/renderD128) may not be the card you want — point Cinomni at another with
+#    Playback__HardwareAcceleration__DevicePath in the `cinomni` service's environment.
+# 2. Find the host's render group id and put it in .env as CINOMNI_RENDER_GID:
+#      getent group render
+#    The container runs as a fixed, non-root uid (CINOMNI_UID, default 1654) that belongs to no group
+#    on the device node by default. Without this, the device exists inside the container and every
+#    open() on it still fails with EACCES.
+#
+# ---------------------------------------------------------------------------
+# NOT VERIFIED AGAINST REAL HARDWARE
+# ---------------------------------------------------------------------------
+# This overlay has not been run against a real VAAPI or QSV device — there is no such hardware in the
+# environment it was written in. It is built from FFmpeg's own documented VAAPI pipelines, encode-only
+# and full-hardware alike (https://trac.ffmpeg.org/wiki/Hardware/VAAPI), and Ubuntu's package
+# contents, the same way the VPN overlay's drop drill (DEPLOYMENT.md section 8) started as a written
+# procedure before it was ever run. If it does not work as written, three things to read in order:
+# `AvailableBackends` staying empty in the startup log, `PlaybackPlan.DecodeAccelerated` on a session
+# whose source should have had a hardware decoder, and a transcode job showing
+# `FellBackToSoftware: true` despite a plan naming a backend. All three are designed to degrade to
+# plain software HLS rather than fail the installation.
+
+services:
+  cinomni:
+    # Built from a checkout instead: docker-compose.build.yml with CINOMNI_BUILD_TARGET=runtime-hwaccel.
+    image: ghcr.io/cinomni/cinomni:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}-hwaccel
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${CINOMNI_RENDER_GID:?set CINOMNI_RENDER_GID in .env to the host's render group id - run: getent group render}"

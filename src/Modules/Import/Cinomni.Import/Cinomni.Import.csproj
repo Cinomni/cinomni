@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cinomni.Import.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cinomni.Import.Contracts\Cinomni.Import.Contracts.csproj" />
+    <!-- Event dep (⇠e): Downloads' DownloadCompleted hands a completed transfer to us. Contracts-only —
+         Import touches no Downloads internals, and echoes the correlation ids back in its own events. -->
+    <ProjectReference Include="..\..\Downloads\Cinomni.Downloads.Contracts\Cinomni.Downloads.Contracts.csproj" />
+    <!-- Interface dep (→i): resolving a landed FILE to the catalog units it serves. Contracts-only and
+         acyclic — Cinomni.Catalog references Cinomni.Import.Contracts for the reverse (event) direction,
+         the same shape as the shipped Subtitles→Library.Contracts / Library→Subtitles.Contracts pair. -->
+    <ProjectReference Include="..\..\Catalog\Cinomni.Catalog.Contracts\Cinomni.Catalog.Contracts.csproj" />
+    <!-- Interface dep (→i): the platform's single episode-numbering vocabulary. Import adds only the
+         folder context and the sample/extras rejection on top; it owns no numbering regex of its own. -->
+    <ProjectReference Include="..\..\ReleaseParsing\Cinomni.ReleaseParsing.Contracts\Cinomni.ReleaseParsing.Contracts.csproj" />
+    <!-- Interface dep (→i): the paths the library believes its files sit at, which is what a repair
+         pass over names an earlier build wrote has to enumerate. Import owns the library tree and the
+         naming rules, so the pass belongs here; Library owns the rows and corrects them by command.
+         Contracts-only and acyclic — the same shape as the shipped Subtitles→Library.Contracts pair. -->
+    <ProjectReference Include="..\..\Library\Cinomni.Library.Contracts\Cinomni.Library.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

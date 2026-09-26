@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- Published contracts only: the kernel (base event/result types) and Catalog's
+         contracts (WorkId — MonitoredTarget references a Work by id). -->
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+    <ProjectReference Include="..\..\Catalog\Cinomni.Catalog.Contracts\Cinomni.Catalog.Contracts.csproj" />
+    <!-- The neutral search criterion this module resolves for a target and publishes to Discovery.
+         Shared contracts, kernel-only itself, so it adds no coupling to another module. -->
+    <ProjectReference Include="..\..\..\Shared\Cinomni.Search.Contracts\Cinomni.Search.Contracts.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

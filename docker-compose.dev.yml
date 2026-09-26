@@ -1,0 +1,25 @@
+# Local development dependencies. NOT for production.
+# Credentials here are development-only (never used in prod — prod secrets come from
+# the environment or a secret manager, never from a committed file).
+services:
+  postgres:
+    image: postgres:16
+    container_name: cinomni-postgres-dev
+    environment:
+      POSTGRES_USER: cinomni
+      POSTGRES_PASSWORD: cinomni_dev
+      POSTGRES_DB: cinomni
+    ports:
+      # Loopback only: the password above is in the repository, so the port must not be reachable from
+      # the network this machine is on. Host 5442 avoids clashing with a local PostgreSQL on 5432.
+      - "127.0.0.1:5442:5432"
+    volumes:
+      - cinomni-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinomni -d cinomni"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cinomni-pgdata:

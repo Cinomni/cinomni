@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Generated gRPC client for the libtorrent sidecar (torrent.proto). The protoc/Grpc.Tools
+    output does not satisfy the repo's nullable + code-style-as-errors policy, so this project
+    (and ONLY this project) relaxes TreatWarningsAsErrors. The hand-written adapter that
+    consumes this client lives in Cinomni.Downloads and stays under warnings-as-errors.
+    This is why the earlier PoC kept its generated client outside src/ entirely.
+  -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" Version="2.67.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
+    <PackageReference Include="Grpc.Tools" Version="2.67.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Single source of truth: the same proto the sidecar and the PoC compile. -->
+    <Protobuf Include="..\..\..\..\sidecar\torrent\proto\torrent.proto" GrpcServices="Client" />
+  </ItemGroup>
+
+</Project>

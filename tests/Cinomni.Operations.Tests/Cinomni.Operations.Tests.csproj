@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.10" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+    <ProjectReference Include="..\..\src\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+  </ItemGroup>
+
+  <!--
+    Contracts-only references, so the wire-compatibility suite can feed a stored pre-change payload
+    of every acquisition-spine event through the real outbox serializer. These are published-language
+    assemblies (no implementation, no DbContext), which is why the platform suite may reference them.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Shared\Cinomni.Search.Contracts\Cinomni.Search.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Monitoring\Cinomni.Monitoring.Contracts\Cinomni.Monitoring.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Decision\Cinomni.Decision.Contracts\Cinomni.Decision.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Acquisition\Cinomni.Acquisition.Contracts\Cinomni.Acquisition.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Downloads\Cinomni.Downloads.Contracts\Cinomni.Downloads.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Import\Cinomni.Import.Contracts\Cinomni.Import.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Library\Cinomni.Library.Contracts\Cinomni.Library.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

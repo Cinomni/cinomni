@@ -1,0 +1,70 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+    <ProjectReference Include="..\..\Modules\Identity\Cinomni.Identity\Cinomni.Identity.csproj" />
+    <ProjectReference Include="..\..\Modules\Catalog\Cinomni.Catalog\Cinomni.Catalog.csproj" />
+    <ProjectReference Include="..\..\Modules\Metadata\Cinomni.Metadata\Cinomni.Metadata.csproj" />
+    <ProjectReference Include="..\..\Modules\Monitoring\Cinomni.Monitoring\Cinomni.Monitoring.csproj" />
+    <ProjectReference Include="..\..\Modules\Discovery\Cinomni.Discovery\Cinomni.Discovery.csproj" />
+    <ProjectReference Include="..\..\Modules\ReleaseParsing\Cinomni.ReleaseParsing\Cinomni.ReleaseParsing.csproj" />
+    <ProjectReference Include="..\..\Modules\Decision\Cinomni.Decision\Cinomni.Decision.csproj" />
+    <ProjectReference Include="..\..\Modules\Acquisition\Cinomni.Acquisition\Cinomni.Acquisition.csproj" />
+    <ProjectReference Include="..\..\Modules\Downloads\Cinomni.Downloads\Cinomni.Downloads.csproj" />
+    <ProjectReference Include="..\..\Modules\Import\Cinomni.Import\Cinomni.Import.csproj" />
+    <ProjectReference Include="..\..\Modules\Library\Cinomni.Library\Cinomni.Library.csproj" />
+    <ProjectReference Include="..\..\Modules\Playback\Cinomni.Playback\Cinomni.Playback.csproj" />
+    <ProjectReference Include="..\..\Modules\Subtitles\Cinomni.Subtitles\Cinomni.Subtitles.csproj" />
+    <ProjectReference Include="..\..\Modules\Notifications\Cinomni.Notifications\Cinomni.Notifications.csproj" />
+    <ProjectReference Include="..\..\Modules\Requests\Cinomni.Requests\Cinomni.Requests.csproj" />
+    <ProjectReference Include="..\..\Modules\RealTime\Cinomni.RealTime\Cinomni.RealTime.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- OpenTelemetry, Apache-2.0, from the OpenTelemetry .NET project (open-telemetry/opentelemetry-dotnet
+         and -dotnet-contrib). The Host is the only project that takes these: a module records through the
+         BCL's own ActivitySource and Meter, which cost nothing and belong to the shared framework, so no
+         module has a compile-time dependency on an exporter.
+
+         OTLP is the only exporter, and it is off unless an endpoint is configured. There is deliberately
+         no Prometheus exporter: OpenTelemetry.Exporter.Prometheus.AspNetCore has never shipped a stable
+         release (1.17.0-beta.1 while everything else here is 1.17.0), and this repository pins stable
+         versions under warnings-as-errors. An installation that wants a scrape endpoint puts an
+         OpenTelemetry Collector in front, which is the supported topology anyway. -->
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The composition-root helpers (module list, configuration binders, startup checks) are internal
+         on purpose: nothing outside the Host may depend on them. The Host test project drives them
+         directly, so the tests compose this installation rather than a copy that drifts from it. -->
+    <InternalsVisibleTo Include="Cinomni.Host.Tests" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(BuildDate)' != ''">
+    <!-- Stamped by the image build, and by nothing else. GET /api/system/info reports it so that an
+         operator can tell two images apart without shelling in; a build that does not pass it — every
+         `dotnet build` and `dotnet run` — simply has no build date, which that route reports as null
+         rather than as unknown. The commit travels separately, as SourceRevisionId, which the SDK
+         already appends to the informational version. -->
+    <AssemblyMetadata Include="BuildDate" Value="$(BuildDate)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The development settings carry a development database credential and point at a developer's own
+         machine. They belong to `dotnet run`, never to a distributed artefact: publishing them would put a
+         committed credential in the image and let ASPNETCORE_ENVIRONMENT=Development silently repoint a
+         container at localhost. Still copied to the build output, so `dotnet run` is unchanged. -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+</Project>

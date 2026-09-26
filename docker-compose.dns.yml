@@ -1,0 +1,27 @@
+# Opt-in: resolve indexer and metadata hosts through resolvers you choose instead of the ones your
+# network hands out.
+#
+# Some internet providers "block" sites by answering their names with 127.0.0.1 or another private
+# address. Cinomni never connects to a non-public address (that is its SSRF guard doing its job), so
+# such a site fails its indexer test with `discovery.indexer.test_destination_refused`. Resolving
+# through a public resolver usually lifts the block; it does not route traffic anywhere else.
+#
+# Enable it by adding this file to COMPOSE_FILE in .env (use ";" as the separator on Windows):
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.dns.yml
+# and optionally pick the resolvers:
+#   CINOMNI_DNS_PRIMARY=1.1.1.1
+#   CINOMNI_DNS_SECONDARY=9.9.9.9
+#
+# Only the two services that resolve third-party names get it: the application itself and the
+# indexer egress proxy that FlareSolverr's browser goes out through. The torrent sidecar keeps the
+# resolver its egress (direct or VPN) gives it.
+services:
+  cinomni:
+    dns:
+      - ${CINOMNI_DNS_PRIMARY:-1.1.1.1}
+      - ${CINOMNI_DNS_SECONDARY:-9.9.9.9}
+
+  indexer-egress:
+    dns:
+      - ${CINOMNI_DNS_PRIMARY:-1.1.1.1}
+      - ${CINOMNI_DNS_SECONDARY:-9.9.9.9}

@@ -1,0 +1,168 @@
+# Opt-in VPN overlay for the torrent sidecar. Never applied by default.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.vpn.yml up -d
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS DOES, AND WHAT IT DOES NOT
+# ---------------------------------------------------------------------------
+# It puts the torrent sidecar inside a tunnel container's network namespace and then makes Cinomni
+# stop downloading when that arrangement stops verifiably holding. Four layers, and each one is
+# useless without the others:
+#
+#   1. the namespace. The sidecar keeps no addresses or networks of its own and publishes no ports;
+#      the only interfaces it has are the tunnel container's;
+#   2. the tunnel container's own packet filter, which drops everything that is not the tunnel or an
+#      explicitly listed exception, and which stays loaded when the tunnel goes away — a kill-switch
+#      that dies with the tunnel is not one;
+#   3. libtorrent bound to the tunnel *device* by name, so a tunnel that disappears takes the sockets
+#      with it instead of letting them re-route over the household's connection;
+#   4. Cinomni observing where its traffic would actually go, and holding every download when that
+#      answer changes. This is the layer the other three cannot provide: a filter that is loaded and
+#      a filter that works are not the same claim, so the outcome is measured rather than assumed.
+#
+# It does NOT hide the rest of Cinomni. The application stays outside the tunnel: indexer, metadata
+# and subtitle traffic keeps its own SSRF-guarded egress over your connection, and only the swarm is
+# sealed. That is the deliberate scope — a tunnel that carried the whole installation would also
+# carry the interface you sign in to.
+#
+# ---------------------------------------------------------------------------
+# WHEN THE TUNNEL DROPS
+# ---------------------------------------------------------------------------
+# Downloads stop, keep their progress, and resume on their own when the tunnel comes back. Nothing is
+# lost and nothing is re-searched. The behaviour is configurable through CINOMNI_TUNNEL_LOSS_POLICY,
+# and the default is the strongest one:
+#
+#   block          — the default. The first observation that is not a verification holds every
+#                    download, including one that could not be taken at all: a sidecar that does not
+#                    answer is not evidence that its traffic is safe. The sidecar refuses to start
+#                    without its tunnel, and a held download cannot be resumed by hand.
+#   pause-and-alert— a single failed observation is absorbed; a sustained one holds the downloads and
+#                    an operator may knowingly resume one anyway. The override is written on the
+#                    task's history.
+#   ignore         — observe and report, change nothing. Downloads keep running over whatever route
+#                    exists, which may be your own connection.
+#
+# Anything below `block` is logged as a warning at every start, naming the mode, and is reported on
+# GET /api/downloads/tunnel. A misspelt value becomes `block`, never the weakest mode.
+#
+# ---------------------------------------------------------------------------
+# THE TUNNEL IMAGE
+# ---------------------------------------------------------------------------
+# gluetun (https://github.com/qdm12/gluetun, MIT), unmodified and pinned by digest, exactly as
+# libtorrent is a third-party dependency: Cinomni links to it, and takes no code, configuration or
+# wording from it. Its packet filter is layer 2 above and is on by default — Cinomni never turns it
+# off and this file has no setting that could. Point it at a provider with the VPN_* variables in
+# .env; DEPLOYMENT.md section 7 lists the ones Cinomni needs and defers the rest to gluetun's own
+# documentation. Refresh the pin the way DEPLOYMENT.md section 12 describes.
+#
+# Any other image works too, if you set CINOMNI_VPN_IMAGE and it satisfies the same contract: create
+# the interface named by CINOMNI_TUNNEL_DEVICE, hold the default route through it, filter everything
+# else, and stay up when the tunnel is not. Cinomni verifies the outcome and not the brand.
+
+services:
+  vpn:
+    # Pinned by digest so a rebuild cannot silently change the container that holds the kill-switch.
+    # v3.41.2, resolved from the registry on 2026-07-29.
+    image: ${CINOMNI_VPN_IMAGE:-qmcgaw/gluetun:v3.41.2@sha256:280809bc6900ed06d6529ad246499103efb31fd80c6327cbfaf90de0b17c3a99}
+    platform: linux/amd64
+    cap_drop:
+      # The rest of the stack drops everything, and this is the one container running as root with a
+      # device handed to it. If the image you chose needs more than NET_ADMIN, add it here knowingly.
+      - ALL
+    cap_add:
+      # Required to create the tunnel interface and install its routes and filter.
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      # Everything Cinomni needs from the tunnel is here; the provider-specific rest lives in .env and
+      # is passed through unread. Cinomni does not parse, rewrite or validate your provider settings.
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER:?set VPN_SERVICE_PROVIDER in .env - see gluetun's provider list}
+      VPN_TYPE: ${VPN_TYPE:-wireguard}
+      # The interface the tunnel creates. It is the same name the sidecar binds to and the same name
+      # Cinomni verifies, which is why it is one variable and not three.
+      VPN_INTERFACE: ${CINOMNI_TUNNEL_DEVICE:-tun0}
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY:-}
+      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES:-}
+      WIREGUARD_PRESHARED_KEY: ${WIREGUARD_PRESHARED_KEY:-}
+      OPENVPN_USER: ${OPENVPN_USER:-}
+      OPENVPN_PASSWORD: ${OPENVPN_PASSWORD:-}
+      SERVER_COUNTRIES: ${VPN_SERVER_COUNTRIES:-}
+      SERVER_CITIES: ${VPN_SERVER_CITIES:-}
+      # The one port that may be reached from Cinomni's own network: the sidecar's control port.
+      # The tunnel image's documented behaviour is that an input port is opened towards the local
+      # network and that reaching a port from the VPN side is a separate mechanism this file does not
+      # use — so the exception is expected to be local-side only. That is the image's documentation
+      # and not an observation: nobody has read this ruleset on a running stack, and the drop drill in
+      # DEPLOYMENT.md section 7 is where it gets confirmed. Until then the credential below is what
+      # this topology actually relies on, which is why it has no default and no fallback.
+      FIREWALL_INPUT_PORTS: "50051"
+      # Only if your Compose network is on a subnet the tunnel container does not see as local, which
+      # a custom `edge` subnet can cause. Empty is correct for the shipped topology.
+      FIREWALL_OUTBOUND_SUBNETS: ${CINOMNI_VPN_OUTBOUND_SUBNETS:-}
+      TZ: ${TZ:-UTC}
+    # The sidecar joins this namespace, so the port the application connects to is reachable here.
+    expose:
+      - "50051"
+    networks:
+      - edge
+    # No `ports`. Nothing about the tunnel or the sidecar is offered to the host.
+    security_opt:
+      - no-new-privileges:true
+    # No `healthcheck` here on purpose: the image declares its own, and it is the image that knows what
+    # "the tunnel is carrying traffic" means for the protocol it speaks. That probe is what makes the
+    # `service_healthy` conditions below mean something. An image you substitute must declare one too —
+    # Compose refuses the dependency outright if it does not, which is the right way to find out.
+    restart: unless-stopped
+
+  torrent-sidecar:
+    # Sharing the tunnel's network namespace: the sidecar loses its own addresses and networks, which
+    # is why the application below is redirected to reach it at the tunnel's name instead.
+    network_mode: "service:vpn"
+    networks: !reset null
+    environment:
+      # The wildcard is deliberate here and is not the whole answer. Inside a shared namespace the
+      # control port would otherwise have to be bound to an address resolved by a DNS server the
+      # tunnel container replaces, which is a start-order dependency on the very thing that breaks.
+      # Two things are meant to stand between the tunnel's peer network and this port instead: the
+      # tunnel's filter, which is configured with no VPN-side input port, and the credential below —
+      # which this topology requires rather than merely accepts. Only the second of those is Cinomni's
+      # own code and the only one it can prove; the first is the tunnel image's behaviour and is
+      # confirmed by reading its ruleset during the drop drill. Bind one address here instead if you
+      # would rather not rely on it.
+      SIDECAR_LISTEN: ${CINOMNI_SIDECAR_LISTEN:-0.0.0.0:50051}
+      # The device libtorrent binds both directions to, and the one the guard observes.
+      SIDECAR_TUNNEL_DEVICE: ${CINOMNI_TUNNEL_DEVICE:-tun0}
+      SIDECAR_TUNNEL_POLICY: ${CINOMNI_TUNNEL_LOSS_POLICY:-block}
+      # No default and no fallback: this topology does not start without a credential on the control
+      # port. Generate one with `openssl rand -hex 32`.
+      SIDECAR_CONTROL_TOKEN: ${CINOMNI_SIDECAR_CONTROL_TOKEN:?set CINOMNI_SIDECAR_CONTROL_TOKEN in .env - the sidecar control port is reachable inside the tunnel namespace and must not be open}
+      SIDECAR_REQUIRE_CONTROL_TOKEN: "1"
+    depends_on:
+      vpn:
+        # Not `service_started`: a sidecar that starts before the tunnel exists refuses to start at
+        # all under the `block` policy, which would be a crash loop instead of a wait.
+        condition: service_healthy
+        # A tunnel container that Compose recreates or restarts gets a new network namespace, and this
+        # container would stay in the old one. This restarts it with the tunnel. A restart Compose does
+        # not drive — the tunnel crashing and Docker bringing it back — is caught by the sidecar
+        # itself: once its device has been missing for SIDECAR_TUNNEL_ORPHAN_SECONDS (two minutes) it
+        # exits, and its restart policy starts it inside the tunnel's current namespace.
+        restart: true
+
+  cinomni:
+    environment:
+      # The sidecar has no address of its own any more; it answers on the tunnel container's.
+      Downloads__Sidecar__Address: http://vpn:50051
+      Downloads__Sidecar__ControlToken: ${CINOMNI_SIDECAR_CONTROL_TOKEN}
+      # Turning the guard on. With this unset — the base topology — the watch job is never scheduled,
+      # the sidecar is never asked about its egress, and nothing about downloads changes.
+      Downloads__Tunnel__Device: ${CINOMNI_TUNNEL_DEVICE:-tun0}
+      # One variable, read by both processes: they accept the same three words, in any casing and with
+      # or without the hyphens. A policy that could be set on one side and not the other would be worse
+      # than no setting at all — the sidecar and the backend would be enforcing different rules.
+      Downloads__Tunnel__LossPolicy: ${CINOMNI_TUNNEL_LOSS_POLICY:-block}
+      Downloads__Tunnel__PollInterval: ${CINOMNI_TUNNEL_POLL_INTERVAL:-00:00:30}
+    depends_on:
+      vpn:
+        condition: service_healthy

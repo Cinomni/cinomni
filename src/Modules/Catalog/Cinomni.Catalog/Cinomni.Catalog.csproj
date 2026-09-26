@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cinomni.Catalog.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cinomni.Catalog.Contracts\Cinomni.Catalog.Contracts.csproj" />
+    <!-- Event dep (⇠e): Import's MediaAvailable tells us a work now has a playable asset.
+         Contracts-only — no cycle (Import references neither Catalog nor its contracts). -->
+    <ProjectReference Include="..\..\Import\Cinomni.Import.Contracts\Cinomni.Import.Contracts.csproj" />
+    <!-- Event dep (⇠e) + interface dep (→i): consumes Metadata's MetadataRefreshed and reads the
+         snapshot via IMetadataQuery to enrich the work (ACL). Contracts-only — Metadata never
+         references Catalog, so there is no cycle. -->
+    <ProjectReference Include="..\..\Metadata\Cinomni.Metadata.Contracts\Cinomni.Metadata.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

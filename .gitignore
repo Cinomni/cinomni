@@ -1,0 +1,73 @@
+# ---- .NET ----
+bin/
+obj/
+*.user
+*.suo
+.vs/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.nupkg
+project.lock.json
+TestResults/
+coverage*.json
+coverage*.xml
+*.trx
+
+# ---- Rider / VS ----
+.idea/
+*.sln.DotSettings.user
+
+# ---- Node / frontend ----
+node_modules/
+dist/
+.vite/
+*.local
+.playwright-mcp/
+
+# ---- Python (the torrent sidecar and its tests) ----
+__pycache__/
+*.py[cod]
+
+# ---- Env / secrets (NEVER commit) ----
+.env
+.env.*
+!.env.example
+appsettings.*.Local.json
+secrets.json
+*.pfx
+*.key
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+
+# ---- Runtime / data ----
+*.log
+/data/
+/media/
+/generated/
+*.fastresume
+# Database dumps. The development default writes them to /.backups, and a dump is a credential store:
+# delivery-channel URLs, indexer addresses, password verifiers and session token hashes. Named after
+# what this feature actually issues rather than by extension: *.manifest.json in particular is a
+# common build-output name, and an ignore that broad would silently untrack a legitimate file.
+/.backups/
+cinomni-*.dump
+cinomni-*.dump.partial
+cinomni-*.manifest.json
+
+# ---- Scratch ----
+scratch/
+tmp/
+
+# ---- Claude Code ----
+# Agent configuration and instruction files stay local to each checkout. Matches at any depth, so
+# src/, tests/ and web/ are covered too.
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+
+# ---- Local tooling state ----
+# CodeGraph indexes this checkout on the machine that runs it; its own .gitignore says as much.
+.codegraph/

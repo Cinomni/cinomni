@@ -1,0 +1,59 @@
+# What never belongs in the image build context. The context is the repository root, because the
+# Downloads gRPC client compiles sidecar/torrent/proto/torrent.proto — everything else is trimmed here
+# so the daemon is not handed build output, dependencies, history or anything that could carry a secret.
+
+# ---- build output and restored dependencies (the image restores its own) ----
+**/bin/
+**/obj/
+**/node_modules/
+web/dist/
+artifacts/
+TestResults/
+*.trx
+coverage*.json
+coverage*.xml
+
+# ---- history and tooling state ----
+.git/
+.gitattributes
+.gitignore
+.github/
+.vs/
+.idea/
+.claude/
+.codegraph/
+.config/
+**/*.user
+**/*.suo
+
+# ---- not compiled into the application image ----
+tests/
+poc/
+**/*.md
+
+# ---- secrets and local state: never in a build context, not even to be ignored later ----
+# Every pattern is `**/`-prefixed on purpose: a bare `.env` is anchored at the context root, so it would
+# leave web/.env.local — whose VITE_* values `vite build` inlines into the served bundle — in the context.
+**/.env
+**/.env.*
+# The development settings hold a development database credential and a developer's own paths. The publish
+# step excludes them as well; both matter, because either one alone is a single edit away from shipping.
+**/appsettings.Development.json
+**/appsettings.*.Local.json
+**/secrets.json
+**/*.pfx
+**/*.key
+
+# ---- runtime data and scratch ----
+data/
+media/
+generated/
+scratch/
+tmp/
+*.log
+*.fastresume
+
+# ---- packaging files the build itself does not read ----
+Dockerfile
+.dockerignore
+docker-compose*.yml

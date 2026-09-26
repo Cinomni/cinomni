@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cinomni.Downloads.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cinomni.Downloads.Contracts\Cinomni.Downloads.Contracts.csproj" />
+    <!-- The generated sidecar gRPC client (its own project so its generated code is exempt from
+         warnings-as-errors; the hand-written adapter here stays under the policy). -->
+    <ProjectReference Include="..\Cinomni.Downloads.Sidecar.Grpc\Cinomni.Downloads.Sidecar.Grpc.csproj" />
+    <!-- Event dep (⇠e): Acquisition's DownloadQueued hands a release off to us. Contracts-only —
+         Downloads touches no Acquisition internals, and echoes the correlation ids back in its
+         own events. -->
+    <ProjectReference Include="..\..\Acquisition\Cinomni.Acquisition.Contracts\Cinomni.Acquisition.Contracts.csproj" />
+    <!-- Sync read (IReleaseFileSource): a private tracker's .torrent is served only to a signed-in
+         member, and only Discovery holds that session. Contracts-only; the file crosses, the cookies
+         never do. -->
+    <ProjectReference Include="..\..\Discovery\Cinomni.Discovery.Contracts\Cinomni.Discovery.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" Version="2.67.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

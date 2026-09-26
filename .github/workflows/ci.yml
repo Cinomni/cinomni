@@ -1,0 +1,370 @@
+# Cinomni continuous integration.
+#
+# Runs the gates CONTRIBUTING.md documents, on Linux, on every pull request and on every push to
+# main. Four jobs, each reproducible verbatim on a contributor machine:
+#
+#   web                  typecheck, lint, unit tests and production build of the SPA.
+#   gates                architecture and completeness scripts, the warnings-as-errors build of the
+#                        whole solution, and the test projects that need no database — including the
+#                        authorization-surface gate, which must fail a PR in minutes.
+#   backend-integration  the full test suite against a real PostgreSQL 16, including the backup
+#                        restore drill, which launches the real pg_dump and pg_restore and is the
+#                        only proof that a dump can be put back and booted against.
+#   migrations           every schema applied from empty, applied again as a no-op, applied on top
+#                        of the schema an existing installation already has, checked for model
+#                        drift, for destructive DDL and for schema ownership, then the real Host
+#                        started twice.
+#
+# The upgrade pass is the one that matters most for a self-hosted product: every user upgrades a
+# database that already holds the previous schema and their data, so "applies from empty" is not
+# the path their machine takes.
+#
+# No secret is referenced anywhere in this pipeline. The only credentials involved are the
+# development-only ones already committed in docker-compose.dev.yml (see SECURITY.md); they are
+# deliberately NOT GitHub Secrets, because treating them as secrets would imply they are production
+# credentials. Fork pull requests run under the read-only pull_request token, and every checkout
+# drops it afterwards: nothing here uses git again once the tree is on disk.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Nothing here writes to the repository, publishes a package or reads a secret.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Supersede a pull request's older run, but never abandon a push to a protected branch.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Separate steps so the failing gate is named in the checks UI.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+  gates:
+    name: gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Seconds, and they catch what a build cannot: these run before anything expensive.
+      - name: Check module boundaries
+        run: bash .github/scripts/check-module-boundaries.sh
+
+      - name: Check solution completeness
+        run: bash .github/scripts/check-solution-completeness.sh
+
+      # The restore script's "the application must be stopped" guard, with stubbed pg_restore, psql and
+      # curl. It is a shell script, so no test project covers it, and it is the one piece of tooling
+      # that replaces the whole database.
+      - name: Check the restore guard
+        run: bash tests/scripts/restore-guard-tests.sh
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # setup-dotnet's own cache needs packages.lock.json files, which this repository does not use.
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore src/Cinomni.slnx
+
+      # -warnaserror covers the test projects too, via tests/Directory.Build.props.
+      - name: Build (warnings are errors)
+        run: dotnet build src/Cinomni.slnx -c Release --no-restore -warnaserror
+
+      # The three projects that touch no database. Host.Tests carries the authorization-surface and
+      # scoped-read-model gates, so an unclassified endpoint fails here without waiting for a server.
+      # A handful of Host.Tests classes compose the real Host against a real PostgreSQL on purpose
+      # (the settings-store read path, the settings HTTP surface, the Monitoring authorization HTTP
+      # surface) and are tagged Category=RequiresDatabase so this job excludes them; backend-integration
+      # runs the whole solution, including these, against a real database.
+      - name: Test (no database required)
+        run: |
+          dotnet test tests/Cinomni.Kernel.Tests/Cinomni.Kernel.Tests.csproj -c Release --no-build \
+            --logger 'trx;LogFileName=kernel.trx' --results-directory ./TestResults
+          dotnet test tests/Cinomni.RealTime.Tests/Cinomni.RealTime.Tests.csproj -c Release --no-build \
+            --logger 'trx;LogFileName=realtime.trx' --results-directory ./TestResults
+          dotnet test tests/Cinomni.Host.Tests/Cinomni.Host.Tests.csproj -c Release --no-build \
+            --filter "Category!=RequiresDatabase" \
+            --logger 'trx;LogFileName=host.trx' --results-directory ./TestResults
+
+      # Only the result files. A TRX carries whatever a test wrote to standard output, and an
+      # artifact is downloadable for days, so the narrower the upload the better.
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gates-test-results
+          path: |
+            TestResults/*.trx
+            TestResults/**/*.trx
+          if-no-files-found: ignore
+          retention-days: 7
+
+  backend-integration:
+    name: backend-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # The client the restore drill launches, pinned to the major the server in
+      # docker-compose.dev.yml runs. Absolute, never the bare name — see the install step.
+      PG_DUMP: /usr/lib/postgresql/16/bin/pg_dump
+      PG_RESTORE: /usr/lib/postgresql/16/bin/pg_restore
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The compose file contributors already use, not a service container: every *TestHost.cs
+      # hardcodes localhost:5442 with the cinomni role, so this keeps one source of truth for the
+      # database contract and keeps the development credentials out of this workflow entirely.
+      - name: Start PostgreSQL
+        run: docker compose -f docker-compose.dev.yml up -d --wait
+
+      # The backup restore drill launches the real pg_dump and pg_restore — it is the only proof that
+      # a dump can be put back and that the current build then boots against it with nothing left to
+      # migrate. The major version matches the server in docker-compose.dev.yml and the client the
+      # application image ships: a restore needs the two to agree.
+      #
+      # CINOMNI_REQUIRE_BACKUP_DRILL below is what stops the drill from quietly retiring: without the
+      # client it reports and stops, which is right on a contributor machine and worthless here, so
+      # this job turns that into a failure. Removing either half fails this job rather than passing a
+      # pipeline that proved nothing about restores.
+      #
+      # The absolute paths matter. On Debian and Ubuntu the bare names go through pg_wrapper, which
+      # runs the HIGHEST installed major — and the runner image ships a client of its own. Installing
+      # 16 and then launching `pg_dump` can therefore run 17 against a PostgreSQL 16 server: the dump
+      # would be fine and the restore would abort on a preamble the server has never heard of, which
+      # is the exact failure this drill exists to catch rather than to suffer. The step fails outright
+      # if the pinned client is not where the package puts it.
+      - name: Install the PostgreSQL client (the restore drill launches it)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client-16
+          test -x "${PG_DUMP}" || { echo "Missing ${PG_DUMP} after installing postgresql-client-16."; exit 1; }
+          test -x "${PG_RESTORE}" || { echo "Missing ${PG_RESTORE} after installing postgresql-client-16."; exit 1; }
+          "${PG_DUMP}" --version
+          "${PG_RESTORE}" --version
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore src/Cinomni.slnx
+
+      - name: Build (warnings are errors)
+        run: dotnet build src/Cinomni.slnx -c Release --no-restore -warnaserror
+
+      # The whole solution, so a newly added test project is covered without editing this workflow.
+      # If this ever turns flaky under parallelism, cap it with -- xUnit.MaxParallelThreads=4
+      # rather than retrying.
+      #
+      # Coverage is collected and published, and nothing reads it: no threshold is enforced here,
+      # so a drop in coverage does not fail this job. Treat the artifact as information, not a gate.
+      - name: Test
+        env:
+          # This job has PostgreSQL and the client, so a restore drill that does not run is a broken
+          # pipeline rather than a machine without the tools. See the install step above.
+          CINOMNI_REQUIRE_BACKUP_DRILL: '1'
+          # The drill reads these two keys from the environment, so the client it launches is the one
+          # installed above rather than whatever pg_wrapper picks.
+          Backup__PgDumpPath: ${{ env.PG_DUMP }}
+          Backup__PgRestorePath: ${{ env.PG_RESTORE }}
+        run: |
+          dotnet test src/Cinomni.slnx -c Release --no-build \
+            --logger 'trx;LogFileName=integration.trx' \
+            --results-directory ./TestResults \
+            --collect:"XPlat Code Coverage"
+
+      - name: PostgreSQL logs
+        if: always()
+        run: docker compose -f docker-compose.dev.yml logs postgres
+
+      - name: Upload test results and coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-test-results
+          path: |
+            TestResults/*.trx
+            TestResults/**/*.trx
+            TestResults/**/coverage.cobertura.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  migrations:
+    name: migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MIGRATIONS_DATABASE: cinomni_ci_migrations
+      UPGRADE_DATABASE: cinomni_ci_upgrade
+      HOST_DATABASE: cinomni_ci_host
+      # The single copy of the development-only credentials in this pipeline. Each step appends its
+      # own Database= to build CINOMNI_DB, the only variable the design-time factories read. If
+      # docker-compose.dev.yml ever changes POSTGRES_USER or POSTGRES_PASSWORD, this line and
+      # .github/scripts/host-smoke.sh's defaults are what has to move with it. Never a production
+      # default, and deliberately not a GitHub Secret (see the header of this file).
+      CINOMNI_DB_SERVER: Host=localhost;Port=5442;Username=cinomni;Password=cinomni_dev
+      # The solution is built once below, so dotnet ef must not rebuild 16 projects.
+      CINOMNI_EF_NO_BUILD: '1'
+      # What an existing installation already has: the tip this change is based on.
+      MIGRATION_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      # Full history: the upgrade and safety gates read the migrations as they were at the base.
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Static, so it fails in seconds and before a database exists.
+      - name: Check migration safety
+        run: bash .github/scripts/check-migration-safety.sh "${MIGRATION_BASE_REF}"
+
+      - name: Start PostgreSQL
+        run: docker compose -f docker-compose.dev.yml up -d --wait
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '.config/dotnet-tools.json') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      # dotnet-ef is pinned with rollForward:false, so this must run before any dotnet ef command.
+      - name: Restore tools and packages
+        run: |
+          dotnet tool restore
+          dotnet restore src/Cinomni.slnx
+
+      - name: Build
+        run: dotnet build src/Cinomni.slnx -c Release --no-restore -warnaserror
+
+      # Dropped first: "from empty" has to be true even when the runner is not throwaway.
+      - name: Create the CI databases
+        run: |
+          for database in "${MIGRATIONS_DATABASE}" "${UPGRADE_DATABASE}" "${HOST_DATABASE}"; do
+            docker compose -f docker-compose.dev.yml exec -T postgres \
+              psql -U cinomni -d postgres -v ON_ERROR_STOP=1 \
+              -c "DROP DATABASE IF EXISTS ${database} WITH (FORCE);" \
+              -c "CREATE DATABASE ${database};"
+          done
+
+      - name: Apply every migration to an empty database
+        env:
+          CINOMNI_DB: Database=${{ env.MIGRATIONS_DATABASE }};${{ env.CINOMNI_DB_SERVER }}
+        run: bash .github/scripts/migrate-all.sh update
+
+      # The point of the job: a second pass must apply nothing, because startup runs on every restart.
+      - name: Apply every migration again (must be a no-op)
+        env:
+          CINOMNI_DB: Database=${{ env.MIGRATIONS_DATABASE }};${{ env.CINOMNI_DB_SERVER }}
+        run: bash .github/scripts/migrate-all.sh update
+
+      - name: Check for model drift
+        env:
+          CINOMNI_DB: Database=${{ env.MIGRATIONS_DATABASE }};${{ env.CINOMNI_DB_SERVER }}
+        run: bash .github/scripts/migrate-all.sh check-drift
+
+      - name: Check schema ownership
+        run: bash .github/scripts/check-schemas.sh "${MIGRATIONS_DATABASE}"
+
+      # The path every existing installation takes: the previous schema, then this change on top.
+      - name: Upgrade an existing installation
+        env:
+          CINOMNI_DB: Database=${{ env.UPGRADE_DATABASE }};${{ env.CINOMNI_DB_SERVER }}
+        run: bash .github/scripts/migration-upgrade.sh "${MIGRATION_BASE_REF}"
+
+      # An upgraded database must end up owning exactly what a fresh one does.
+      - name: Check schema ownership after the upgrade
+        run: bash .github/scripts/check-schemas.sh "${UPGRADE_DATABASE}"
+
+      # The production startup path, not the CLI one: the Migrate*Async calls then RecoverOperationsAsync.
+      - name: Host startup on an empty database
+        run: bash .github/scripts/host-smoke.sh "${HOST_DATABASE}"
+
+      # Twice in a row proves migration and recovery are re-entrant, which is what surviving a
+      # restart actually means. host-smoke.sh refuses to start if the port is still held, so the
+      # second run cannot be answered by the first.
+      - name: Host startup again (restart re-entrancy)
+        run: bash .github/scripts/host-smoke.sh "${HOST_DATABASE}"
+
+      # The startup path builds its own database, so it gets the same ownership check as the CLI
+      # one: a module registered in Program.cs without its Migrate*Async call fails here.
+      - name: Check schema ownership on the Host database
+        run: bash .github/scripts/check-schemas.sh "${HOST_DATABASE}"
+
+      - name: PostgreSQL logs
+        if: always()
+        run: docker compose -f docker-compose.dev.yml logs postgres

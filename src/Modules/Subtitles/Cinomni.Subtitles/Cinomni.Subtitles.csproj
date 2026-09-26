@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cinomni.Subtitles.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cinomni.Subtitles.Contracts\Cinomni.Subtitles.Contracts.csproj" />
+    <!-- Event dep (⇠e) + interface dep (→i): reacts to Library's MediaAssetRegistered and queries
+         Library for the asset path/streams. Contracts-only — never mutates Library's tables. -->
+    <ProjectReference Include="..\..\Library\Cinomni.Library.Contracts\Cinomni.Library.Contracts.csproj" />
+    <!-- Interface dep (→i): resolves the asset's catalog units to SxxEyy and the series title so an
+         episode query is not built from the release name alone, and decides whether the caller may see
+         the work at all. Contracts-only and acyclic — Cinomni.Catalog.Contracts depends on the Kernel
+         and nothing else. -->
+    <ProjectReference Include="..\..\Catalog\Cinomni.Catalog.Contracts\Cinomni.Catalog.Contracts.csproj" />
+    <!-- Event dep (⇠e): reacts to Import's MediaFileRelocated. A sidecar is named from the video's
+         stem and lives in its directory, so a video that moves takes its subtitles with it and the
+         stored paths have to follow. Contracts-only. -->
+    <ProjectReference Include="..\..\Import\Cinomni.Import.Contracts\Cinomni.Import.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

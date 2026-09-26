@@ -1,0 +1,81 @@
+# Sidecar image build.
+#
+# sidecar/torrent/Dockerfile is the only image in the repository today, and building it is a real
+# gate: the build generates the gRPC stubs from proto/torrent.proto, so a broken, renamed or moved
+# proto fails here instead of at "docker compose -f docker-compose.sidecar.yml up".
+#
+# The image is built, never pushed: nothing is published, no registry credential exists and
+# permissions stay read-only. Packaging the application image and deciding where images are
+# published are separate pieces of work.
+#
+# Building an image executes what its dependency chain says to execute, so the chain is pinned:
+# the base image by digest and the Python packages by version and hash, installed with
+# --require-hashes (see sidecar/torrent/Dockerfile and requirements.txt). Dependabot keeps both
+# moving.
+#
+# The sidecar's own unit tests run as a build stage (`--target test`) rather than as a Python job:
+# the image already carries the interpreter they need, and the runtime stage deliberately does not
+# carry the tests. Building that target is what keeps them executed somewhere automatic. There is
+# still no Python lint step and no image scan: both belong with the work that decides how images are
+# built, hardened and published, not here.
+name: Image
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sidecar/**'
+      - 'docker-compose.sidecar.yml'
+      - '.github/workflows/image.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sidecar/**'
+      - 'docker-compose.sidecar.yml'
+      - '.github/workflows/image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sidecar-image:
+    name: sidecar-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # The suite the runtime image does not ship. It fails the build when it fails, which is the
+      # point of running it here rather than only on a contributor's machine.
+      - name: Run the torrent sidecar unit tests
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ./sidecar/torrent
+          target: test
+          platforms: linux/amd64
+          push: false
+          load: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # MVP targets Linux amd64 on a single node, so one platform is the honest build.
+      - name: Build the torrent sidecar image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ./sidecar/torrent
+          platforms: linux/amd64
+          push: false
+          load: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

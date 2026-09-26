@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cinomni.RealTime.Tests" />
+    <InternalsVisibleTo Include="Cinomni.Host.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+    <!-- Contracts only, and only to *consume*: this module owns no schema and publishes no event, so
+         every reference here is one direction — an integration event in, a signal out to a browser.
+         Downloads is also read synchronously through IDownloadQuery for the progress snapshot. -->
+    <ProjectReference Include="..\..\Downloads\Cinomni.Downloads.Contracts\Cinomni.Downloads.Contracts.csproj" />
+    <ProjectReference Include="..\..\Acquisition\Cinomni.Acquisition.Contracts\Cinomni.Acquisition.Contracts.csproj" />
+    <ProjectReference Include="..\..\Import\Cinomni.Import.Contracts\Cinomni.Import.Contracts.csproj" />
+    <ProjectReference Include="..\..\Notifications\Cinomni.Notifications.Contracts\Cinomni.Notifications.Contracts.csproj" />
+    <ProjectReference Include="..\..\Requests\Cinomni.Requests.Contracts\Cinomni.Requests.Contracts.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

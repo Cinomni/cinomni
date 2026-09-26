@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Neutral, shared search contracts of the acquisition spine: the criterion + request that
+    travel from Monitoring (producer) to Discovery (consumer). Lives outside either module and
+    references ONLY the kernel, so consuming the search contract never drags in another module's
+    context (notably: Discovery must not be able to reference Catalog).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

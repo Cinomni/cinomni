@@ -1,0 +1,38 @@
+<Project>
+  <!--
+    Shared build configuration for every test project.
+
+    src/Directory.Build.props does not reach tests/ (MSBuild stops at the first Directory.Build.props
+    it finds walking up from the project directory), so test code used to compile without
+    warnings-as-errors while production code did not. The documented gate is "warnings are errors"
+    for the whole solution, and CI builds src/Cinomni.slnx with -warnaserror, which includes every
+    test project. This file makes the local build and the CI build agree.
+
+    It mirrors src/Directory.Build.props property for property with ONE deliberate exception:
+    InvariantGlobalization. src/Directory.Build.props sets it, so the Host ships without ICU while
+    these test assemblies run with it, and a culture-aware or Unicode-aware operation can therefore
+    behave one way in a passing test and another way in the shipped process.
+
+    That is not hypothetical, which is why the property is not simply copied here. Under invariant
+    globalization string.Normalize(NormalizationForm.FormD) returns the string unchanged, so
+    Cinomni.ReleaseParsing's TitleAnalyzer.NormalizeTitle does not fold diacritics in the Host:
+    "Amélie" and "Amelie" produce different canonical keys in production, and
+    ReleaseParserTests.Diacritics_are_folded_so_the_canonical_key_collapses_across_indexers passes
+    only because ICU is present here. Setting the property would turn that test red without fixing
+    the parser, and the fix changes canonical keys that are already persisted, which is a
+    ReleaseParsing decision (a parse rule version), not a build-configuration one.
+
+    So: aligning the two is the goal, the parser has to move first, and until it does this comment
+    is the record of why they differ instead of an accident nobody noticed.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

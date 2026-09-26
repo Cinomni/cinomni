@@ -1,0 +1,304 @@
+# Cinomni, production. One node, linux/amd64 (MVP scope).
+#
+#   cp .env.example .env      # then set POSTGRES_PASSWORD and CINOMNI_TORRENT_EGRESS
+#   docker compose pull
+#   docker compose up -d
+#
+# Every image comes from GitHub Container Registry at the version CINOMNI_IMAGE_TAG names; nothing is
+# built on this machine. To build from a checkout of the source instead (development, or a modified
+# image), add docker-compose.build.yml: `docker compose -f docker-compose.yml -f
+# docker-compose.build.yml up -d --build`.
+#
+# Two variables have no default and abort the start until you set them. The second one is a decision, not
+# a setting: CINOMNI_TORRENT_EGRESS declares how the torrent sidecar reaches the swarm.
+#
+#   direct — the sidecar talks to trackers and peers over this machine's own internet connection. Your
+#            household's public address is what the swarm sees and what a tracker records. Nothing here
+#            hides it, and nothing here fails closed.
+#   vpn    — you also apply docker-compose.vpn.yml, which puts the sidecar inside a tunnel container's
+#            network namespace, binds libtorrent to the tunnel device, and holds every download when
+#            the traffic stops verifiably leaving through it. Downloads keep their progress and resume
+#            on their own. That overlay is where the kill-switch lives; this file has none and needs
+#            none, because it makes no claim to protect anything.
+#
+# The declaration is recorded on the sidecar and is not enforced: it exists so nobody acquires anything
+# without having chosen. Read DEPLOYMENT.md before the first run — in particular the storage contract,
+# which is not optional: the library and the download staging directory must be one filesystem seen at
+# the same absolute path by both containers.
+#
+# `docker-compose.dev.yml` and `docker-compose.sidecar.yml` are development files and are not used here;
+# their credentials are development-only and never reach this file.
+
+name: cinomni
+
+services:
+  postgres:
+    image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cinomni}
+      POSTGRES_DB: ${POSTGRES_DB:-cinomni}
+      # No default on purpose: an unset password aborts `docker compose up` instead of quietly
+      # starting an installation on a credential someone read in a file on the internet.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env before starting Cinomni}
+    volumes:
+      - cinomni-pgdata:/var/lib/postgresql/data
+    # Unpublished, and on a network with no route out: the application is its only client.
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cinomni} -d ${POSTGRES_DB:-cinomni}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # What the official entrypoint needs and no more: it starts as root to fix the data directory's
+      # ownership and permissions, then drops to the postgres account for the server itself.
+      - CHOWN
+      - DAC_READ_SEARCH
+      - FOWNER
+      - SETGID
+      - SETUID
+    shm_size: 256mb
+    restart: unless-stopped
+
+  cinomni:
+    image: ghcr.io/cinomni/cinomni:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}
+    platform: linux/amd64
+    depends_on:
+      postgres:
+        condition: service_healthy
+      torrent-sidecar:
+        condition: service_started
+      flaresolverr:
+        condition: service_healthy
+    environment:
+      # The password is single-quoted because this is a connection string, not a shell: a value holding
+      # `;` or `"` would otherwise end the field and turn the rest into keywords nobody chose. Npgsql
+      # unquotes it. A literal `'` still cannot be used — .env.example says so.
+      ConnectionStrings__Cinomni: >-
+        Host=postgres;Port=5432;Database=${POSTGRES_DB:-cinomni};Username=${POSTGRES_USER:-cinomni};Password='${POSTGRES_PASSWORD}'
+      # The sidecar's own name on the shared network. The VPN overlay is what changes this.
+      Downloads__Sidecar__Address: http://torrent-sidecar:50051
+      # Required in every topology. The control port adds torrents, decides where they are written
+      # and removes them with their files; on this network its only intended caller is this container,
+      # but anything else that joins `edge` could reach it too, and an open port is not a default.
+      Downloads__Sidecar__ControlToken: ${CINOMNI_SIDECAR_CONTROL_TOKEN:?set CINOMNI_SIDECAR_CONTROL_TOKEN in .env - generate one with openssl rand -hex 32}
+      # The three storage roots, all inside the one /data mount. The staging path is sent to the
+      # sidecar as its save path and reopened here afterwards, so both containers must see /data
+      # at this exact path — see DEPLOYMENT.md, "The storage contract".
+      Downloads__Sidecar__StagingPath: /data/downloads
+      Import__LibraryRoot: /data/library
+      Playback__TranscodeRoot: /data/transcodes
+      # How many streams may be converted at once, on the node and per account. Each is an FFmpeg
+      # process and a converted copy on the transcode volume; see DEPLOYMENT.md, "Resource limits".
+      Playback__MaxConcurrentTranscodes: "${CINOMNI_MAX_TRANSCODES:-4}"
+      Playback__MaxTranscodesPerAccount: "${CINOMNI_MAX_TRANSCODES_PER_ACCOUNT:-2}"
+      # Database backups. A dump is a credential store, so it goes on a volume of its own rather than
+      # into the media directory, which is commonly shared. The startup check compares these container
+      # paths and refuses an overlap in either direction; it cannot see the HOST path behind
+      # CINOMNI_BACKUP_DIR, so keeping that one out of the media tree is the operator's own decision —
+      # DEPLOYMENT.md, "Backup and restore", says so and says why it matters.
+      Backup__Root: /data/backups
+      Backup__Enabled: "${CINOMNI_BACKUP_ENABLED:-true}"
+      Backup__KeepCount: "${CINOMNI_BACKUP_KEEP:-7}"
+      Backup__Interval: "${CINOMNI_BACKUP_INTERVAL:-1.00:00:00}"
+      # Telemetry, off unless an endpoint is set. With this empty no OpenTelemetry provider is
+      # registered at all and nothing leaves the process — telemetry departing a self-hosted
+      # installation is a decision, not a default. A collector must be reachable on one of the two
+      # networks below; on `edge` is the usual place. A value that cannot be honoured stops the start
+      # rather than exporting silently to nowhere.
+      Observability__Otlp__Endpoint: ${CINOMNI_OTLP_ENDPOINT:-}
+      Observability__Otlp__Protocol: ${CINOMNI_OTLP_PROTOCOL:-grpc}
+      # Independent of the exporter: an installation shipping logs with a file collector wants this
+      # without wanting OTLP. Trace and span ids are attached to every line either way.
+      Observability__Logs__Json: "${CINOMNI_JSON_LOGS:-false}"
+      # The key stored secrets are encrypted with — an indexer's API key or login password today.
+      # Read from the environment rather than a settings key for the obvious reason: it is what
+      # protects the settings. Unset means the installation starts, says so once, and refuses to
+      # store a credential instead of writing one in plaintext.
+      CINOMNI_SECRET_KEY: ${CINOMNI_SECRET_KEY:-}
+      # The proxies whose X-Forwarded-For may be believed, comma-separated. Empty means the rate
+      # limiter counts the connecting address, which is right when nothing sits in front and wrong
+      # behind a reverse proxy -- there every client would arrive as the proxy and share one bucket.
+      Security__TrustedProxies: ${CINOMNI_TRUSTED_PROXIES:-}
+      Security__ProxyHopCount: ${CINOMNI_PROXY_HOPS:-1}
+      # Whether TLS terminates in front of this application. Only when true does Cinomni send
+      # Strict-Transport-Security, and then only on requests that arrived over TLS. It is a statement
+      # about the deployment rather than something inferred from a header, because the header is
+      # six months of a browser refusing plain HTTP and a spoofable one would lock out the household.
+      Security__Hsts: "${CINOMNI_HSTS:-false}"
+      # Optional provider credentials. Unset means the matching feature reports unavailable; the
+      # installation still starts and logs which key is missing, by name.
+      Metadata__Tmdb__ApiKey: ${TMDB_API_KEY:-}
+      Metadata__Tvdb__ApiKey: ${TVDB_API_KEY:-}
+      Metadata__Tvdb__Pin: ${TVDB_PIN:-}
+      Subtitles__Provider__ApiKey: ${OPENSUBTITLES_API_KEY:-}
+      TZ: ${TZ:-UTC}
+    ports:
+      # Loopback by default: nothing is on the LAN until the operator says so, and there is no TLS
+      # in this image. Put a reverse proxy in front before changing the bind address.
+      - "${CINOMNI_BIND_ADDRESS:-127.0.0.1}:${CINOMNI_HTTP_PORT:-8080}:8080"
+    volumes:
+      # One bind for library and downloads: a hardlinked import only works within one filesystem.
+      - ${CINOMNI_DATA_DIR:-./data}:/data
+      # Transcode output is disposable churn and is deliberately kept off the media disk.
+      - cinomni-transcodes:/data/transcodes
+      # Database dumps. A named volume by default; point CINOMNI_BACKUP_DIR at a host path to have
+      # them somewhere you can copy off the machine — which you should, because a backup that only
+      # exists on the disk that failed is not one. Keep that path outside CINOMNI_DATA_DIR: nothing
+      # here can check it, and inside the media tree it is an unencrypted credential store.
+      - ${CINOMNI_BACKUP_DIR:-cinomni-backups}:/data/backups
+    networks:
+      # The only service on both: it reaches the database on `data` and the outside world — indexers,
+      # metadata and subtitle providers, and the sidecar — on `edge`.
+      - data
+      - edge
+      # Browser automation control only. FlareSolverr has no edge route of its own.
+      - indexer-control
+    user: "${CINOMNI_UID:-1654}:${CINOMNI_GID:-1654}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # The application writes to /data and nowhere else. Keeping the rest of the filesystem read-only is
+    # what stops a file-write bug from becoming persistent code: /app holds the assemblies and the web
+    # bundle, and that bundle is served from the same origin as the session.
+    read_only: true
+    tmpfs:
+      - /tmp
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "${CINOMNI_CPUS:-4.0}"
+          memory: ${CINOMNI_MEMORY:-2g}
+    restart: unless-stopped
+
+  torrent-sidecar:
+    image: ghcr.io/cinomni/cinomni-torrent-sidecar:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}
+    platform: linux/amd64
+    labels:
+      # No default, so `docker compose up` stops here until the operator has decided how this container
+      # reaches the swarm. `direct` sends every tracker announce and every peer connection over the
+      # household's own connection, with its public address visible to the swarm; `vpn` means the VPN
+      # overlay is applied as well, and that overlay is what makes the traffic stop when the tunnel
+      # does. Recorded, not enforced: the label is the record of a choice, not the mechanism.
+      com.cinomni.torrent-egress: ${CINOMNI_TORRENT_EGRESS:?set CINOMNI_TORRENT_EGRESS in .env to direct or vpn - direct sends torrent traffic over your own internet connection, with your public address visible in the swarm}
+    environment:
+      # Bound to the one address the application uses, not to every interface. Under the VPN overlay
+      # this container has no address of its own, so that file binds differently and explains why.
+      SIDECAR_LISTEN: torrent-sidecar:50051
+      # Staging only. This process parses hostile swarm data, so it is given the directory it writes into
+      # and not the library it must never touch.
+      SIDECAR_DATA: /data/downloads
+      # No tunnel in this topology, and the empty value is the statement: with no device the sidecar
+      # binds libtorrent as it always has, observes nothing, and holds nothing. The VPN overlay sets it.
+      SIDECAR_TUNNEL_DEVICE: ""
+      # Required, and refused at start when missing. See the application's ControlToken above.
+      SIDECAR_CONTROL_TOKEN: ${CINOMNI_SIDECAR_CONTROL_TOKEN:?set CINOMNI_SIDECAR_CONTROL_TOKEN in .env - generate one with openssl rand -hex 32}
+      SIDECAR_REQUIRE_CONTROL_TOKEN: "1"
+      TZ: ${TZ:-UTC}
+    # No `ports`. The sidecar handles hostile swarm data; it is reachable from the application only.
+    volumes:
+      # The staging subtree alone, at the same absolute path the application uses, so a completed
+      # download is where the importer expects it — and nothing above it is reachable from here.
+      - ${CINOMNI_DATA_DIR:-./data}/downloads:/data/downloads
+    networks:
+      # `edge` only: it needs the swarm, and it must not be able to reach the database. Applying
+      # docker-compose.vpn.yml replaces this with the tunnel's network namespace.
+      - edge
+    # The same account the application runs as: a download this process writes must be hardlinkable
+    # by the importer, and a link across owners is refused.
+    user: "${CINOMNI_UID:-1654}:${CINOMNI_GID:-1654}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Same reasoning, and it matters more here: this process parses data straight from the swarm, so it
+    # must not be able to rewrite the code that parses it. The staging mount stays writable.
+    read_only: true
+    tmpfs:
+      - /tmp
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${SIDECAR_CPUS:-2.0}"
+          memory: ${SIDECAR_MEMORY:-1g}
+    restart: unless-stopped
+
+  indexer-egress:
+    image: ghcr.io/cinomni/cinomni-indexer-egress:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}
+    platform: linux/amd64
+    networks:
+      # The only bridge between browser control and internet-capable edge networking.
+      - indexer-control
+      - edge
+    user: "65532:65532"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128m
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/cinomni/cinomni-flaresolverr:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}
+    platform: linux/amd64
+    depends_on:
+      indexer-egress:
+        condition: service_healthy
+    environment:
+      # FlareSolverr's own request proxy setting, not ambient HTTP_PROXY/HTTPS_PROXY variables.
+      PROXY_URL: http://indexer-egress:8080
+      LOG_LEVEL: warning
+      LOG_HTML: "false"
+      CAPTCHA_SOLVER: none
+      TZ: ${TZ:-UTC}
+    networks:
+      # Internal only: no default route to edge and no direct internet-capable network.
+      - indexer-control
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8191/health', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: 2.0
+    mem_limit: 1g
+    # Every Chrome thread counts against this. 256 ran out as soon as two challenges were solved at
+    # once ("can't start new thread"); 1024 fits a few concurrent browsers and is still a bound.
+    pids_limit: 1024
+    restart: unless-stopped
+
+networks:
+  # No route out and no other member: the database is reachable from the application and nothing else.
+  data:
+    internal: true
+  # Where the application and the sidecar reach the internet, and each other.
+  edge:
+  # Exactly Cinomni, FlareSolverr, and its egress guard share this unroutable control plane.
+  indexer-control:
+    internal: true
+
+volumes:
+  cinomni-pgdata:
+  cinomni-transcodes:
+  # Only used while CINOMNI_BACKUP_DIR is unset; a host path there replaces it.
+  cinomni-backups:

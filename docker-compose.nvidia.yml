@@ -1,0 +1,52 @@
+# Opt-in NVENC overlay: NVIDIA GPU hardware transcoding via nvidia-container-toolkit. Never applied
+# by default.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up -d
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS DOES, AND WHAT IT DOES NOT
+# ---------------------------------------------------------------------------
+# Reserves the host's GPU for the `cinomni` service through the Compose device-reservation syntax
+# nvidia-container-toolkit implements. No image rebuild: the base `runtime` target's ffmpeg already
+# carries h264_nvenc — only the BSD-licensed, header-only ffnvcodec headers were needed to compile
+# that in, never the proprietary driver — and the toolkit injects the actual driver libraries
+# (libnvidia-encode.so and friends) into the container at start. That is also why NVENC needs nothing
+# baked into the image the way VAAPI's driver packages do (docker-compose.hwaccel.yml): there is
+# nothing GPU-specific to bake in until a real GPU shows up at runtime.
+#
+# Applying this overlay makes NVENC POSSIBLE; the startup probe still decides whether it is actually
+# usable, the planner still falls back to software per session when it is not (a bounded, one-time
+# retry — TranscodeJob.FellBackToSoftware records it when it happens), and an operator can turn
+# hardware transcoding off entirely from Console → Settings without removing the overlay.
+#
+# ---------------------------------------------------------------------------
+# BEFORE YOU APPLY IT
+# ---------------------------------------------------------------------------
+# The NVIDIA Container Toolkit (https://github.com/NVIDIA/nvidia-container-toolkit, Apache-2.0) must
+# already be installed and configured on the host — this overlay only asks Docker for a GPU, it does
+# not install the toolkit that makes that request meaningful. Follow NVIDIA's own installation guide
+# for your distribution, then confirm the daemon actually sees the GPU before applying this file:
+#   docker run --rm --gpus all ubuntu:24.04 nvidia-smi
+#
+# ---------------------------------------------------------------------------
+# NOT VERIFIED AGAINST REAL HARDWARE
+# ---------------------------------------------------------------------------
+# This overlay has not been run against a real NVIDIA GPU — there is no such hardware in the
+# environment it was written in. It is built from the toolkit's own documented Compose integration,
+# the same way the VPN overlay's drop drill (DEPLOYMENT.md section 8) started as a written procedure
+# before it was ever run.
+
+services:
+  cinomni:
+    environment:
+      # "video" mounts the encoder and decoder libraries (libnvidia-encode, libnvcuvid), but FFmpeg's
+      # NVENC and its CUDA decode/scale path both open a CUDA context first, and libcuda only comes with
+      # "compute". Without it every NVENC test fails with "Cannot load libcuda.so.1".
+      NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

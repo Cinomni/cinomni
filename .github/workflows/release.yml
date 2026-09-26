@@ -1,0 +1,239 @@
+# Release: publish the images and the GitHub release for a version tag.
+#
+# Pushing a tag such as `0.1.0-alpha.1` (see Versioning in CHANGELOG.md) is the only trigger. The
+# workflow refuses a tag that disagrees with what the source says it is: the tag must equal
+# `<Version>` in src/Directory.Build.props and `version` in web/package.json, and CHANGELOG.md must
+# have a `## [<tag>]` section, whose body becomes the release notes. So a release cannot publish an
+# image that reports a different version than its tag, or ship without notes.
+#
+# Images go to GitHub Container Registry under the repository's owner:
+#
+#   ghcr.io/cinomni/cinomni:<version>                  the application (Dockerfile, target runtime)
+#   ghcr.io/cinomni/cinomni:<version>-hwaccel          the same with VAAPI/QSV driver packages
+#   ghcr.io/cinomni/cinomni-torrent-sidecar:<version>
+#   ghcr.io/cinomni/cinomni-indexer-egress:<version>
+#   ghcr.io/cinomni/cinomni-flaresolverr:<version>
+#
+# A prerelease (alpha, beta, rc) gets only its exact tag. A release also moves `<major>.<minor>` and
+# `latest`, so nobody following `latest` is ever moved onto a prerelease. Every image is linux/amd64,
+# the MVP's one platform, and carries the OCI labels that name its source, revision and licence.
+#
+# Only this workflow can write packages, and only on a tag: the token's `packages: write` exists in
+# no other workflow, and pull requests never reach this file.
+name: Release
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+', '[0-9]+.[0-9]+.[0-9]+-*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      minor: ${{ steps.version.outputs.minor }}
+      build-date: ${{ steps.version.outputs.build-date }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag against the source
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "::error::Tag '$TAG' is not MAJOR.MINOR.PATCH[-alpha|beta|rc.N]."
+            exit 1
+          fi
+          props=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/Directory.Build.props)
+          web=$(node -p "require('./web/package.json').version")
+          if [ "$props" != "$TAG" ] || [ "$web" != "$TAG" ]; then
+            echo "::error::Tag '$TAG' but src/Directory.Build.props says '$props' and web/package.json says '$web'."
+            exit 1
+          fi
+          for file in docker-compose.yml docker-compose.hwaccel.yml .env.example; do
+            if ! grep -q "CINOMNI_IMAGE_TAG:-$TAG}\|CINOMNI_IMAGE_TAG=$TAG\$" "$file"; then
+              echo "::error::$file does not default CINOMNI_IMAGE_TAG to '$TAG'."
+              exit 1
+            fi
+          done
+          if ! grep -q "^## \[$TAG\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$TAG]' section."
+            exit 1
+          fi
+          {
+            echo "version=$TAG"
+            echo "prerelease=$([[ "$TAG" == *-* ]] && echo true || echo false)"
+            echo "minor=$(echo "$TAG" | cut -d. -f1,2)"
+            echo "build-date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+  images:
+    name: image (${{ matrix.name }}${{ matrix.suffix }})
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: cinomni
+            context: .
+            target: runtime
+            suffix: ''
+          - name: cinomni
+            context: .
+            target: runtime-hwaccel
+            suffix: '-hwaccel'
+          - name: cinomni-torrent-sidecar
+            context: ./sidecar/torrent
+            target: ''
+            suffix: ''
+          - name: cinomni-indexer-egress
+            context: ./sidecar/indexer-egress
+            target: runtime
+            suffix: ''
+          - name: cinomni-flaresolverr
+            context: ./sidecar/flaresolverr
+            target: ''
+            suffix: ''
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Name the tags
+        id: tags
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          MINOR: ${{ needs.verify.outputs.minor }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          set -euo pipefail
+          image=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          tags="$image:$VERSION$SUFFIX"
+          if [ "$PRERELEASE" = "false" ]; then
+            tags="$tags,$image:$MINOR$SUFFIX,$image:latest$SUFFIX"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          # Only the application reads these; the sidecar Dockerfiles declare none and ignore them.
+          build-args: |
+            CINOMNI_VERSION=${{ needs.verify.outputs.version }}
+            CINOMNI_COMMIT=${{ github.sha }}
+            CINOMNI_BUILD_DATE=${{ needs.verify.outputs.build-date }}
+            CINOMNI_SOURCE_URL=${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.name }}
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ needs.verify.outputs.build-date }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+          cache-from: type=gha,scope=${{ matrix.name }}${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}${{ matrix.suffix }}
+
+  release:
+    name: release
+    needs: [verify, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the release notes
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          owner=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          awk -v h="## [$VERSION]" 'index($0, h) == 1 { f = 1; next } /^## / { if (f) exit } f' CHANGELOG.md > notes.md
+          cat >> notes.md <<EOF
+
+          ---
+
+          ## Install or upgrade
+
+          Download \`docker-compose.yml\` and \`.env.example\` from this release, copy \`.env.example\` to
+          \`.env\`, set it up as [DEPLOYMENT.md]($REPO/blob/$VERSION/DEPLOYMENT.md) describes, and run:
+
+          \`\`\`bash
+          docker compose pull
+          docker compose up -d
+          \`\`\`
+
+          Take a backup before upgrading an existing installation (DEPLOYMENT.md, *Backup and restore*).
+
+          | Image | Tag |
+          |---|---|
+          | \`ghcr.io/$owner/cinomni\` | \`$VERSION\` (\`$VERSION-hwaccel\` with VAAPI/QSV drivers) |
+          | \`ghcr.io/$owner/cinomni-torrent-sidecar\` | \`$VERSION\` |
+          | \`ghcr.io/$owner/cinomni-indexer-egress\` | \`$VERSION\` |
+          | \`ghcr.io/$owner/cinomni-flaresolverr\` | \`$VERSION\` |
+          EOF
+          sed -i 's/^          //' notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          flags=()
+          [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
+          cp .env.example env.example
+          # What an operator runs: the compose file and its opt-in overlays, not the development ones.
+          assets=(docker-compose.yml env.example docker-compose.hwaccel.yml docker-compose.nvidia.yml
+                  docker-compose.vpn.yml docker-compose.dns.yml)
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release edit "$VERSION" --notes-file notes.md "${flags[@]}"
+            gh release upload "$VERSION" "${assets[@]}" --clobber
+          else
+            gh release create "$VERSION" --verify-tag --title "Cinomni $VERSION" --notes-file notes.md "${flags[@]}" "${assets[@]}"
+          fi

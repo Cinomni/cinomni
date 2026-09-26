@@ -1,0 +1,212 @@
+@import 'tailwindcss';
+
+/*
+ * Cinomni design tokens (Tailwind v4 CSS-first theme). A dark projection room where artwork is the hero
+ * and a single amber marquee accent carries primary intent. System fonts only (no remote imports).
+ * DESIGN.md explains every token; components must not introduce raw colors, sizes or radii.
+ */
+@theme {
+  /* Surfaces, from the room outwards. */
+  --color-bg: #0a0c10;
+  --color-surface: #12151c;
+  --color-elevated: #1a1f29;
+  --color-hover: #212735;
+  --color-scrim: #0a0c10;
+
+  /* Hairlines only: they separate, they never box content. */
+  --color-line: #2a3140;
+  --color-line-soft: #1c212c;
+
+  /* Text. Every step keeps at least 4.5:1 on bg and surface. */
+  --color-fg: #eceff5;
+  --color-muted: #9aa2b5;
+  --color-faint: #7a8397;
+
+  /* The marquee: primary action, active destination, progress. One per view. */
+  --color-accent: #f5b544;
+  --color-accent-strong: #ffca57;
+  --color-on-accent: #1a1204;
+
+  /* State only, always paired with a glyph and words. Warning is orange so it never reads as the accent. */
+  --color-success: #4ade80;
+  --color-warning: #fb923c;
+  --color-danger: #f87171;
+  --color-info: #60a5fa;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, 'Apple Color Emoji',
+    'Segoe UI Emoji', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;
+
+  /* Type scale: display → label. Sizes outside it are a smell. */
+  --text-display: 2.75rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.03em;
+  --text-display--font-weight: 700;
+  --text-title: 1.875rem;
+  --text-title--line-height: 2.25rem;
+  --text-title--letter-spacing: -0.02em;
+  --text-title--font-weight: 650;
+  --text-section: 1.1875rem;
+  --text-section--line-height: 1.625rem;
+  --text-section--letter-spacing: -0.01em;
+  --text-section--font-weight: 600;
+  --text-card: 0.875rem;
+  --text-card--line-height: 1.25rem;
+  --text-card--font-weight: 500;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.5rem;
+  --text-meta: 0.8125rem;
+  --text-meta--line-height: 1.125rem;
+  --text-label: 0.6875rem;
+  --text-label--line-height: 0.875rem;
+  --text-label--letter-spacing: 0.08em;
+  --text-label--font-weight: 600;
+
+  /* Three radii: artwork, controls, floating panels. */
+  --radius-media: 0.375rem;
+  --radius-control: 0.5rem;
+  --radius-panel: 0.875rem;
+  /* Kept for pages not yet moved onto the scale (Phase 3–4). */
+  --radius-card: 0.75rem;
+
+  --shadow-lift: 0 16px 40px -16px rgb(0 0 0 / 0.75);
+
+  /* Motion: short, decelerating, never decorative. */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-menu-in: menu-in 120ms var(--ease-out-quint);
+  --animate-sheet-in: sheet-in 240ms var(--ease-out-quint);
+  --animate-side-in: side-in 240ms var(--ease-out-quint);
+
+  --tracking-brand: -0.035em;
+
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
+
+  @keyframes sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+
+  @keyframes side-in {
+    from {
+      transform: translateX(24px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes shimmer {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+}
+
+/* The page gutter every full-bleed surface aligns to: 16 / 24 / 40px. */
+@utility gutter {
+  padding-inline: 1rem;
+
+  @media (width >= 40rem) {
+    padding-inline: 1.5rem;
+  }
+
+  @media (width >= 64rem) {
+    padding-inline: 2.5rem;
+  }
+}
+
+/* The scroll-padding counterpart of `gutter`, so a snapped rail item lands on the gutter, not the edge. */
+@utility scroll-gutter {
+  scroll-padding-inline: 1rem;
+
+  @media (width >= 40rem) {
+    scroll-padding-inline: 1.5rem;
+  }
+
+  @media (width >= 64rem) {
+    scroll-padding-inline: 2.5rem;
+  }
+}
+
+/* Rails scroll by touch, trackpad and their own buttons; the bar itself is noise. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    scrollbar-color: var(--color-line) transparent;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Keyboard focus stays visible everywhere; pointer focus is quiet. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  kbd {
+    font-family: var(--font-mono);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line);
+    border-radius: 999px;
+    border: 2px solid var(--color-bg);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-faint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Off-screen poster tiles skip layout and paint until scrolled near; the intrinsic size keeps the
+   scrollbar honest meanwhile. A cheap stand-in for virtualization while the catalog API has no paging. */
+@utility defer-render {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 20rem;
+}

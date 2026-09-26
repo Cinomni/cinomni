@@ -1,0 +1,38 @@
+# Build every image from this checkout instead of pulling the published ones.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# For development, and for anyone running a modified image. The images are tagged `:local` so a
+# source build never overwrites a pulled ghcr.io tag, and an unstamped build reports the version the
+# source declares (src/Directory.Build.props) with no commit or build date; see "Which build am I
+# running?" in DEPLOYMENT.md for stamping one. With hardware acceleration, also set
+# CINOMNI_BUILD_TARGET=runtime-hwaccel and apply docker-compose.hwaccel.yml.
+#
+# A modified image must point CINOMNI_SOURCE_URL at its own corresponding source (AGPL-3.0); see
+# DEPLOYMENT.md.
+
+services:
+  cinomni:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Explicit on purpose: the Dockerfile's last stage is `runtime-hwaccel` (opt-in, GPU driver
+      # packages), and Docker builds the last stage when no target is named.
+      target: ${CINOMNI_BUILD_TARGET:-runtime}
+    image: cinomni:local
+
+  torrent-sidecar:
+    build:
+      context: ./sidecar/torrent
+    image: cinomni-torrent-sidecar:local
+
+  indexer-egress:
+    build:
+      context: ./sidecar/indexer-egress
+      target: runtime
+    image: cinomni-indexer-egress:local
+
+  flaresolverr:
+    build:
+      context: ./sidecar/flaresolverr
+    image: cinomni-flaresolverr:local

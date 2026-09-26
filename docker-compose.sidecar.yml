@@ -1,0 +1,24 @@
+# Torrent sidecar for the libtorrent PoC and for local development. Not a deployment file:
+# `docker-compose.yml` is, and it publishes nothing.
+#
+# The port is published on loopback only, because publishing it is the whole point here — the .NET
+# client and the PoC run on the host and have to reach it — and because everything that makes it safe
+# in a deployment is absent here: no private network, no tunnel namespace, and no control credential.
+# Set SIDECAR_CONTROL_TOKEN below if you want to exercise the credential path; the sidecar says which
+# of the two it is in its first log line either way.
+services:
+  torrent-sidecar:
+    build: ./sidecar/torrent
+    image: cinomni-torrent-sidecar
+    container_name: cinomni-torrent-sidecar
+    ports:
+      - "127.0.0.1:50051:50051"
+    environment:
+      # The PoC's offline flow: CreateTestTorrent seeds a random file from a loopback session. Off in
+      # every deployment file, where it would be 64 MiB written per call and a loopback peer allowed.
+      SIDECAR_ENABLE_TEST_TORRENTS: "1"
+    volumes:
+      - cinomni-torrent-data:/data
+
+volumes:
+  cinomni-torrent-data:

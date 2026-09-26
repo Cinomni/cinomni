@@ -1,0 +1,51 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **A security problem is not a bug report.** Do not open a public issue for it: report it
+        privately as described in SECURITY.md.
+
+        Before posting logs, remove anything private: library paths, tracker URLs and passkeys,
+        API keys, tokens and account names.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Console → System, the page footer, or `GET /api/system/info` (`informationalVersion`).
+      placeholder: 0.1.0-alpha.1+f705941…
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How it runs
+      options:
+        - Docker Compose on Linux
+        - Docker Desktop on Windows or macOS
+        - Host running natively on Windows (not a supported deployment)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The relevant lines from `docker compose logs cinomni`, with private details removed.
+      render: text

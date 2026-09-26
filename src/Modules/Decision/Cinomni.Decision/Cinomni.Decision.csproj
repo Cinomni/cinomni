@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cinomni.Decision.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cinomni.Decision.Contracts\Cinomni.Decision.Contracts.csproj" />
+    <!-- Interface deps: Release Parsing (IReleaseParser + ParsedRelease) and Discovery's published
+         result read-interface (IReleaseSearchResults) — the resolution of how Decision reads the
+         raw releases a SearchCompleted refers to. Plus the neutral search event. -->
+    <ProjectReference Include="..\..\ReleaseParsing\Cinomni.ReleaseParsing.Contracts\Cinomni.ReleaseParsing.Contracts.csproj" />
+    <ProjectReference Include="..\..\Discovery\Cinomni.Discovery.Contracts\Cinomni.Discovery.Contracts.csproj" />
+    <!-- Interface dep: ICatalogSeriesQuery, the one shared resolver from release numbering to
+         catalog units. Acyclic — Catalog.Contracts is Kernel-only and Catalog never references
+         Decision (the same shape as Subtitles -> Library.Contracts). -->
+    <ProjectReference Include="..\..\Catalog\Cinomni.Catalog.Contracts\Cinomni.Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Shared\Cinomni.Search.Contracts\Cinomni.Search.Contracts.csproj" />
+    <!-- Event dep: AcquisitionAttemptFailed, so a release that failed a goal is not offered to it again.
+         Acyclic — Acquisition.Contracts names only the kernel, and Acquisition consumes Decision's
+         events through Decision.Contracts, never this project. -->
+    <ProjectReference Include="..\..\Acquisition\Cinomni.Acquisition.Contracts\Cinomni.Acquisition.Contracts.csproj" />
+    <!-- Interface dep: ITargetSearchPlans, so an interactive search asks an indexer the very question
+         the sweep would. Acyclic — Monitoring.Contracts names only the kernel, Catalog and the shared
+         search contracts, and never Decision (Monitoring's implementation consumes UpgradeAssessed,
+         which is the reverse direction and goes through Decision.Contracts). -->
+    <ProjectReference Include="..\..\Monitoring\Cinomni.Monitoring.Contracts\Cinomni.Monitoring.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
+    <ProjectReference Include="..\..\Library\Cinomni.Library.Contracts\Cinomni.Library.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
