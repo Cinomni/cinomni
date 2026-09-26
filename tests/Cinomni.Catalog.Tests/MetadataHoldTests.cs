@@ -44,6 +44,17 @@ public sealed class MetadataHoldTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_held_title_is_not_counted_on_a_shelf_for_a_member()
+    {
+        await RestrictedHorrorShelfAsync();
+        await AddMovieAsync("Paddington", [new ExternalId(MetadataProvider.Tmdb, "116149")]);
+        await AddMovieAsync("Home video", []);
+
+        Assert.Equal(1, await DefaultShelfCountAsync(Member));
+        Assert.Equal(2, await DefaultShelfCountAsync(Operator));
+    }
+
+    [Fact]
     public async Task A_held_title_whose_metadata_restricts_it_never_reaches_the_open_shelf()
     {
         var shelf = await RestrictedHorrorShelfAsync();
@@ -122,6 +133,13 @@ public sealed class MetadataHoldTests : IAsyncLifetime
     {
         await using var scope = _provider.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<IContentAccess>().CanSeeWorkAsync(viewer, work.Value);
+    }
+
+    private async Task<int> DefaultShelfCountAsync(Viewer viewer)
+    {
+        await using var scope = _provider.CreateAsyncScope();
+        var collections = await scope.ServiceProvider.GetRequiredService<ICatalogBrowse>().CollectionsAsync(viewer);
+        return collections.Single(c => c.IsDefault).WorkCount;
     }
 
     private async Task<WorkSummary?> GetAsync(Viewer viewer, WorkId work)

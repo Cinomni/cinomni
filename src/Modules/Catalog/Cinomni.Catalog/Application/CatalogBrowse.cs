@@ -119,13 +119,17 @@ public sealed class CatalogBrowse(CatalogDbContext dbContext, ContentAccess acce
         CancellationToken cancellationToken = default)
     {
         var visible = access.VisibleCollectionIds(viewer);
+        // Counted from the same predicate the listing uses, so the number on a shelf is the number of
+        // titles this viewer can open there: a work held for its metadata, or above their age ceiling,
+        // is neither listed nor counted.
+        var works = access.Visible(viewer);
 
         var rows = await dbContext.Collections
             .Where(c => visible.Contains(c.Id))
             .AsNoTracking()
             .OrderByDescending(c => c.IsDefault)
             .ThenBy(c => c.Name)
-            .Select(c => new { Collection = c, WorkCount = dbContext.Works.Count(w => w.CollectionId == c.Id) })
+            .Select(c => new { Collection = c, WorkCount = works.Count(w => w.CollectionId == c.Id) })
             .ToListAsync(cancellationToken);
 
         return rows.Select(row => row.Collection.ToSummary(row.WorkCount)).ToList();
