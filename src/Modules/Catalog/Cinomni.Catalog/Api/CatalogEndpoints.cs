@@ -517,6 +517,8 @@ public static class CatalogEndpoints
         overview = withOverview ? work.Overview : null,
         runtimeMinutes = work.RuntimeMinutes,
         genres = work.Genres ?? [],
+        // Only an administrator can ever read true here: a held work is invisible to everyone else.
+        awaitingMetadata = work.AwaitingMetadata,
         // Smaller renditions of the two urls above, for what a client actually draws. A provider with no
         // size ladder answers its original here too, so these are always safe to render.
         posterSmallUrl = ArtworkVariants.Resize(work.PosterUrl, ArtworkSize.PosterSmall),

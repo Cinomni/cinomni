@@ -139,6 +139,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             .OnDelete(DeleteBehavior.Cascade);
 
         work.Property(x => x.CollectionPinned).HasDefaultValue(false);
+        // False for every work that exists when this column arrives: an upgrade hides nothing.
+        work.Property(x => x.AwaitingMetadata).HasDefaultValue(false);
         work.HasOne<StoredCollectionRule>()
             .WithMany()
             .HasForeignKey(x => x.PlacedByRuleId)

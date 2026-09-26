@@ -165,7 +165,9 @@ public sealed class CollectionAdministration(CatalogDbContext dbContext, IUnitOf
             .ExecuteUpdateAsync(set => set
                 .SetProperty(w => w.CollectionId, collectionId.Value)
                 .SetProperty(w => w.CollectionPinned, true)
-                .SetProperty(w => w.PlacedByRuleId, (Guid?)null), token), cancellationToken);
+                .SetProperty(w => w.PlacedByRuleId, (Guid?)null)
+                // An operator placing it by hand is the other way a held title is released.
+                .SetProperty(w => w.AwaitingMetadata, false), token), cancellationToken);
         return Result.Success();
     }
 

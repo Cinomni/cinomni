@@ -19,6 +19,11 @@ under the rules in *Versioning* below.
   move, including titles that would fall back to the open default collection. Titles are placed when
   they are added and again when their metadata arrives. Saving is only possible after a preview, and
   it warns when titles would leave a restricted collection for an open one.
+- **New titles wait for their metadata while rules exist.** A title added while any collection rule
+  exists is hidden from members until its metadata arrives, because until then the rules cannot see
+  its genres or age rating and it would otherwise sit on the open default collection. Administrators
+  see it with a notice; placing it by hand (through the API for now) also releases it. Titles added without a provider id are
+  not held, since nothing would ever release them.
 
 ### Changed
 

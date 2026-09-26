@@ -126,15 +126,16 @@ public sealed class CatalogCommands(
         };
 
         // A work always sits somewhere. A collection named on the add is an operator's choice and pins
-        // the work there; otherwise the rules place it — by kind, title and year only for now, until
-        // enrichment brings genres and a rating and places it again.
+        // the work there; otherwise the rules place it — by kind, title and year only for now, and held
+        // from members until enrichment brings genres and a rating and places it again. Every add path
+        // that passes external ids also asks Metadata for them, which is what ends the hold.
         if (collection is { } named)
         {
             work.PinTo(named.Value);
         }
         else
         {
-            await placement.PlaceNewAsync(work, cancellationToken);
+            await placement.PlaceNewAsync(work, expectsMetadata: externalIds.Count > 0, cancellationToken);
         }
 
         foreach (var externalId in externalIds)
