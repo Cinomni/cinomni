@@ -429,9 +429,11 @@ public static class CatalogEndpoints
             return result.IsSuccess ? Results.NoContent() : FailureResult(result.Error);
         })
             .RequireAuthorization(AuthorizationPolicies.Administrator);
+
+        group.MapCollectionRuleRoutes();
     }
 
-    private static IResult FailureResult(Cinomni.Kernel.Results.Error error)
+    internal static IResult FailureResult(Cinomni.Kernel.Results.Error error)
     {
         var status = error.Code switch
         {
@@ -451,6 +453,7 @@ public static class CatalogEndpoints
         accessMode = collection.AccessMode.ToString(),
         isDefault = collection.IsDefault,
         workCount = collection.WorkCount,
+        rulePriority = collection.RulePriority,
     };
 
     /// <summary>

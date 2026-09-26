@@ -9,9 +9,10 @@ namespace Cinomni.Catalog.Application;
 
 /// <summary>
 /// The operator side of collections: create them, decide who may browse them, and move works between
-/// them. Granting and revoking are single rows in this module's own schema — no event, no command, no
-/// outbox hop, because nothing else in the system reacts to them. Revocation takes effect on the next
-/// read, which is what makes it immediate for browsing and for playback alike.
+/// them by hand, which pins them (the rules live in <see cref="CollectionRuleAdministration"/>).
+/// Granting and revoking are single rows in this module's own schema — no event, no command, no outbox
+/// hop, because nothing else in the system reacts to them. Revocation takes effect on the next read,
+/// which is what makes it immediate for browsing and for playback alike.
 /// </summary>
 public sealed class CollectionAdministration(CatalogDbContext dbContext, IUnitOfWork unitOfWork)
     : ICollectionAdministration
@@ -41,7 +42,9 @@ public sealed class CollectionAdministration(CatalogDbContext dbContext, IUnitOf
             return Result<CollectionId>.Failure(new Error("catalog.invalid_collection", "A collection name is required."));
         }
 
-        var collection = Collection.Create(name, kind, accessMode, DateTimeOffset.UtcNow);
+        // A new collection is asked last, so creating one never changes where an existing title sits.
+        var lastPriority = await dbContext.Collections.MaxAsync(c => (int?)c.RulePriority, cancellationToken) ?? -1;
+        var collection = Collection.Create(name, kind, accessMode, lastPriority + 1, DateTimeOffset.UtcNow);
 
         try
         {
@@ -143,8 +146,7 @@ public sealed class CollectionAdministration(CatalogDbContext dbContext, IUnitOf
 
     public async Task<Result> MoveWorkAsync(WorkId workId, CollectionId collectionId, CancellationToken cancellationToken = default)
     {
-        var work = await dbContext.Works.FirstOrDefaultAsync(w => w.Id == workId.Value, cancellationToken);
-        if (work is null)
+        if (!await dbContext.Works.AnyAsync(w => w.Id == workId.Value, cancellationToken))
         {
             return Result.Failure(new Error("catalog.work_not_found", "No such work."));
         }
@@ -154,14 +156,16 @@ public sealed class CollectionAdministration(CatalogDbContext dbContext, IUnitOf
             return Result.Failure(NotFound);
         }
 
-        if (work.CollectionId == collectionId.Value)
-        {
-            return Result.Success();
-        }
-
-        // Visibility follows the work: whoever could see the destination can now see this title.
-        work.CollectionId = collectionId.Value;
-        await SaveAsync(cancellationToken);
+        // Visibility follows the work: whoever could see the destination can now see this title. A move
+        // by hand pins it, even onto the shelf it already sits on — that is how an operator says "here,
+        // whatever the rules decide later". All three columns are written whatever this context last
+        // saw, so a placement committed a moment earlier cannot leave the pin on a shelf nobody chose.
+        await unitOfWork.ExecuteAsync(async token => await dbContext.Works
+            .Where(w => w.Id == workId.Value)
+            .ExecuteUpdateAsync(set => set
+                .SetProperty(w => w.CollectionId, collectionId.Value)
+                .SetProperty(w => w.CollectionPinned, true)
+                .SetProperty(w => w.PlacedByRuleId, (Guid?)null), token), cancellationToken);
         return Result.Success();
     }
 

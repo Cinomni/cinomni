@@ -24,6 +24,44 @@ public sealed class Work
     /// </summary>
     public Guid CollectionId { get; set; } = DefaultCollection.Id;
 
+    /// <summary>
+    /// Whether an administrator put this work where it is by hand. A pinned work is out of the rules'
+    /// reach until it is unpinned: an override the next sweep undoes is not an override.
+    /// </summary>
+    public bool CollectionPinned { get; private set; }
+
+    /// <summary>
+    /// The rule that placed this work, or null when no rule claims it (it sits on the default collection)
+    /// or it is pinned. Persisted rather than logged because it is the answer to "why can this account
+    /// see this title".
+    /// </summary>
+    public Guid? PlacedByRuleId { get; private set; }
+
+    /// <summary>Puts the work on a collection by hand and pins it there.</summary>
+    public void PinTo(Guid collectionId)
+    {
+        CollectionId = collectionId;
+        CollectionPinned = true;
+        PlacedByRuleId = null;
+    }
+
+    /// <summary>
+    /// Places the work where the rules decided. A pinned work is left alone. Returns whether it changed
+    /// collection — the event that changes who may see it; a new rule id on the same shelf is not one.
+    /// </summary>
+    public bool PlaceByRule(Guid collectionId, Guid? ruleId)
+    {
+        if (CollectionPinned)
+        {
+            return false;
+        }
+
+        var moved = CollectionId != collectionId;
+        CollectionId = collectionId;
+        PlacedByRuleId = ruleId;
+        return moved;
+    }
+
     public required string Title { get; set; }
 
     /// <summary>Title normalized for ordering (leading articles dropped, lower-cased).</summary>

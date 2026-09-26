@@ -10,7 +10,25 @@ under the rules in *Versioning* below.
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **Rule-based collections (API only; the console screens follow).** A collection can carry rules on
+  kind, genre, age rating, year, runtime, original language or title, and the collections are asked in
+  an order you set: the first rule that matches decides which shelf a title sits on, and therefore who
+  can see it. Every rule or order change can be previewed first, and the preview lists what would
+  move, including titles that would fall back to the open default collection. Titles are placed when
+  they are added and again when their metadata arrives.
+
+### Changed
+
+- **Moving a title to a collection by hand now pins it there.** Rules leave a pinned title alone until
+  the pin is released.
+
+### Upgrading
+
+- Titles that already sit outside the default collection are pinned by the upgrade, so saving the
+  first rule cannot move them and nobody gains or loses sight of anything. Existing collections are
+  asked in the order they were created.
 
 ## [0.1.0-alpha.1] - 2026-09-26
 
