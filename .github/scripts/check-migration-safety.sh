@@ -32,7 +32,9 @@ base_ref="${1:-}"
 root="${2:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "$root"
 
-if [ -z "$base_ref" ]; then
+# An empty base ref is valid (a push that opens the repository, or a manual run): the parent is
+# used, and a first commit has nothing to check against. Only a missing argument is a mistake.
+if [ "$#" -eq 0 ]; then
   printf 'Usage: %s <base-ref> [repository-root]\n' "$0" >&2
   exit 2
 fi
