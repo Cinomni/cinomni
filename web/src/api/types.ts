@@ -208,11 +208,95 @@ export interface Collection {
   accessMode: CollectionAccessMode
   isDefault: boolean
   workCount: number
+  /**
+   * Evaluation order across collections: lower runs first, and first match wins. This is what
+   * decides which shelf claims a title that matches two rule sets, so it is not a display
+   * preference — reordering changes who can see what.
+   */
+  rulePriority: number
 }
 export interface CreateCollectionRequest {
   name: string
   kind: CollectionKind
   accessMode: CollectionAccessMode
+}
+
+/**
+ * The closed vocabulary a rule condition may name. Closed on purpose, and the absences are the
+ * interesting part: availability, status and episode counts are NOT fields, because a title is in
+ * exactly one collection and collections govern who may see it. A rule on availability would move a
+ * title — and change its audience — as a side effect of a download finishing. A restricted shelf
+ * that opens itself when an episode lands is a security failure shaped like a feature.
+ */
+export type CollectionRuleField =
+  | 'Kind'
+  | 'Genre'
+  | 'ContentRating'
+  | 'Year'
+  | 'RuntimeMinutes'
+  | 'OriginalLanguage'
+  | 'Title'
+
+export type CollectionRuleOperator = 'Is' | 'IsNot' | 'AtLeast' | 'AtMost' | 'Contains' | 'StartsWith'
+
+/**
+ * One condition. Every value is a string on the wire, including the numeric fields — the backend
+ * parses per field and refuses what it cannot read rather than coercing it.
+ *
+ * `values` are alternatives (OR) within a condition; conditions are combined with AND. There is no
+ * nesting and no regular expressions, by design: a closed grammar is what lets this client offer
+ * only what the API will accept.
+ */
+export interface CollectionRuleCondition {
+  field: CollectionRuleField
+  operator: CollectionRuleOperator
+  values: string[]
+}
+
+export interface CollectionRule {
+  id: string
+  collectionId: string
+  name: string
+  conditions: CollectionRuleCondition[]
+}
+
+/** One title as a preview reports it, with the shelf it is on now rather than the one it would join. */
+export interface RulePreviewWork {
+  id: string
+  title: string
+  year: number | null
+  kind: WorkKind
+  currentCollectionId: string
+  currentCollectionName: string
+  /**
+   * Where it would end up. Constant across a rules preview — the collection being edited — and
+   * per-title in a reorder preview, where each title goes to whichever collection claims it next.
+   *
+   * A title no rule claims any more falls back to the default collection, which is open. That is an
+   * exposure nobody anticipates, because it comes from a title ceasing to match rather than from
+   * moving it anywhere, and this field is what makes it countable.
+   */
+  targetCollectionId: string
+  targetCollectionName: string
+  pinned: boolean
+}
+
+/**
+ * What a rule set would do, before it does it. The three counts are not interchangeable and a screen
+ * that showed only `matched` would misstate the consequence: a pinned title matches and stays put,
+ * and a title already on the target shelf matches and does not move either.
+ */
+export interface RulePreview {
+  matched: number
+  wouldMove: number
+  pinnedSkipped: number
+  /** The first page of affected titles, not the whole set. */
+  works: RulePreviewWork[]
+}
+
+/** How many titles changed shelf when a rule set was saved. */
+export interface RulesApplied {
+  moved: number
 }
 export interface AddSeriesRequest {
   title: string
