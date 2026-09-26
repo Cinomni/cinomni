@@ -175,9 +175,9 @@ describe('CollectionRulesSection', () => {
     await waitFor(() => expect(catalogApi.setCollectionRules).toHaveBeenCalled())
   })
 
-  it('CollectionRulesSection_will_not_preview_a_rule_that_matches_everything', async () => {
-    // A rule with no conditions claims the whole library. The API refuses it; this refuses it first,
-    // and says what it would have done rather than reporting a form error.
+  it('CollectionRulesSection_never_sends_a_rule_that_matches_everything', async () => {
+    // A rule with no conditions would claim the whole library. Removing the only condition of an
+    // unsaved rule leaves nothing to preview — and no error, because nothing wrong was asked for.
     const user = userEvent.setup()
     const collection = aCollection()
     renderWithProviders(<CollectionRulesSection collection={collection} collections={[collection]} />)
@@ -185,8 +185,30 @@ describe('CollectionRulesSection', () => {
     await user.click(await screen.findByRole('button', { name: 'Add condition' }))
     await user.click(screen.getByRole('button', { name: /^Remove/ }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/every title in the library/)
     expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('CollectionRulesSection_removes_a_saved_rule_by_previewing_an_empty_set', async () => {
+    // Emptying a saved rule is how its titles are released; it is previewed like any other change,
+    // and what is sent is no rule at all rather than a rule with no conditions.
+    const user = userEvent.setup()
+    const collection = aCollection()
+    vi.mocked(catalogApi.collectionRules).mockResolvedValue([
+      {
+        id: 'rule-1',
+        collectionId: collection.id,
+        name: collection.name,
+        conditions: [{ field: 'Genre', operator: 'Is', values: ['Horror'] }],
+      },
+    ])
+    renderWithProviders(<CollectionRulesSection collection={collection} collections={[collection]} />)
+
+    await user.click(await screen.findByRole('button', { name: /^Remove/ }))
+    expect(screen.getByText(/Saving removes this collection/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Preview' }))
+
+    await waitFor(() => expect(catalogApi.previewCollectionRules).toHaveBeenCalledWith(collection.id, []))
   })
 
   it('CollectionRulesSection_drops_values_that_a_narrowed_operator_could_not_carry', async () => {
