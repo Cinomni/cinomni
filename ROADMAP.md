@@ -76,7 +76,7 @@ criteria are met.
 
 | Area | You can… |
 |---|---|
-| **Library** | Browse movies and series with artwork, genres and a regional age rating; group titles into collections; limit what an account sees |
+| **Library** | Browse movies and series with artwork, genres and a regional age rating; group titles into collections, by hand or by rules you preview first; limit what an account sees |
 | **Finding releases** | Use Torznab/Newznab indexers or declarative definitions, from catalog sources you subscribe to or written by hand, including private trackers that sign in and sit behind a challenge |
 | **Decisions** | See why every release was taken or refused; set quality profiles and a cutoff; search by hand and override deliberately |
 | **Downloads** | Download with the built-in libtorrent sidecar, optionally only through a VPN that fails closed; resume after any restart |
@@ -91,13 +91,13 @@ criteria are met.
 
 | Next (likely candidates) | Later (deliberately deferred) | Out of scope for now |
 |---|---|---|
-| **Rule-based collections**: genres are already on every title | Python subtitle worker (many providers, sync, mods) | Music, books, comics, images |
-| **Usenet**: scope reopened; the indexer model already speaks Newznab | WebSocket / remote control across sessions | Jellyfin-compatible client API |
-| **Subtitle sync**: the `Syncing` state exists, the step does not | High availability, multi-server | Native mobile and TV apps |
-| **The two hardware drills**: a real VPN drop, a real GPU | | Kubernetes, plugins, federation |
-| **Dolby Vision profile 5** tone mapping | | Native Windows/macOS as a *supported* deployment |
+| **Usenet**: scope reopened; the indexer model already speaks Newznab | Python subtitle worker (many providers, sync, mods) | Music, books, comics, images |
+| **Subtitle sync**: the `Syncing` state exists, the step does not | WebSocket / remote control across sessions | Jellyfin-compatible client API |
+| **The two hardware drills**: a real VPN drop, a real GPU | High availability, multi-server | Native mobile and TV apps |
+| **Dolby Vision profile 5** tone mapping | | Kubernetes, plugins, federation |
+| | | Native Windows/macOS as a *supported* deployment |
 
-The next product decision that already has its data is **rule-based collections**. A per-account
+A per-account
 *download* quota was considered and refused: a download belongs to the installation's monitoring, not
 to whoever asked (see *An open-request cap* in the long version).
 

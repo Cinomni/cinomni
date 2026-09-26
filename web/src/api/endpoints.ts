@@ -11,6 +11,8 @@ import type {
   PathRepairRunAccepted,
   QueueSnapshot,
   RetentionWindows,
+  RulePreview,
+  RulesApplied,
   ScheduledJob,
   SetDownloadPrioritiesRequest,
   SetIndexerCapabilitiesRequest,
@@ -25,6 +27,7 @@ import type {
   AddSeriesRequest,
   AppNotification,
   Collection,
+  CollectionRule,
   CollectionAccessMode,
   CreateCollectionRequest,
   CreateUserRequest,
@@ -233,11 +236,36 @@ export const catalogApi = {
     api.post<{ collectionId: string }>('/api/catalog/collections', body),
   setCollectionAccessMode: (id: string, accessMode: CollectionAccessMode) =>
     api.put<void>(`/api/catalog/collections/${id}/access-mode`, { accessMode }),
+  /**
+   * The whole evaluation order at once: position in the array IS the priority. Sent complete and in
+   * one call on purpose — a per-collection write would have to invent a tie-break, and a sequence of
+   * writes would leave the installation in intermediate orders nobody chose, each of which is a
+   * window where a title sits on the wrong shelf and the wrong people can see it.
+   *
+   * A list missing any collection is refused (`catalog.rule_priority.incomplete`) rather than guessed.
+   */
+  setCollectionRulePriority: (collectionIds: string[]) =>
+    api.put<RulesApplied>('/api/catalog/collections/rule-priority', { collectionIds }),
+  /** What a proposed order would move, without moving it. Same shape as the rule preview. */
+  previewCollectionRulePriority: (collectionIds: string[]) =>
+    api.post<RulePreview>('/api/catalog/collections/rule-priority/preview', { collectionIds }),
+  collectionRules: (id: string) => api.get<CollectionRule[]>(`/api/catalog/collections/${id}/rules`),
+  /** Replaces the whole rule set and applies it; answers with how many titles changed shelf. */
+  setCollectionRules: (id: string, rules: CollectionRule[]) =>
+    api.put<RulesApplied>(`/api/catalog/collections/${id}/rules`, rules),
+  /**
+   * What a rule set would do, without doing it. Nothing is saved. This is what makes the rule
+   * builder safe to use: saving can move hundreds of titles between shelves, and a shelf decides
+   * who may see what is on it.
+   */
+  previewCollectionRules: (id: string, rules: CollectionRule[]) =>
+    api.post<RulePreview>(`/api/catalog/collections/${id}/rules/preview`, rules),
   collectionGrants: (id: string) => api.get<string[]>(`/api/catalog/collections/${id}/grants`),
   grantCollection: (id: string, userId: string) =>
     api.put<void>(`/api/catalog/collections/${id}/grants/${userId}`),
   revokeCollection: (id: string, userId: string) =>
     api.del<void>(`/api/catalog/collections/${id}/grants/${userId}`),
+  /** Moves one title by hand, which also pins it out of the rules' reach. */
   moveWork: (workId: string, collectionId: string) =>
     api.put<void>(`/api/catalog/works/${workId}/collection`, { collectionId }),
 }

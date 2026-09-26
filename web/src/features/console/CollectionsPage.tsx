@@ -14,6 +14,8 @@ import { Select } from '@/ui/Select'
 import { PlusIcon } from '@/ui/icons'
 import { Spinner } from '@/ui/Spinner'
 import { TextField } from '@/ui/TextField'
+import { CollectionOrderSection } from './CollectionOrderSection'
+import { CollectionRulesSection } from './CollectionRulesSection'
 
 /**
  * Collections and who may browse them. Administrators only — and the API enforces that regardless of
@@ -49,11 +51,16 @@ export function CollectionsPage() {
         // An empty list here previously read as "no collections exist" instead of "the fetch failed".
         <ErrorState message={errorMessage(error, 'Could not load collections.')} onRetry={() => void refetch()} />
       ) : (
-        <ul className="space-y-2">
-          {data?.map((collection) => (
-            <CollectionRow key={collection.id} collection={collection} />
-          ))}
-        </ul>
+        <>
+          {/* Above the shelves, because it governs all of them: which one claims a title that more
+              than one set of rules matches. */}
+          {data.length > 1 && <CollectionOrderSection collections={data} />}
+          <ul className="space-y-2">
+            {data.map((collection) => (
+              <CollectionRow key={collection.id} collection={collection} collections={data} />
+            ))}
+          </ul>
+        </>
       )}
 
       <AddCollectionModal open={creating} onClose={() => setCreating(false)} />
@@ -61,7 +68,7 @@ export function CollectionsPage() {
   )
 }
 
-function CollectionRow({ collection }: { collection: Collection }) {
+function CollectionRow({ collection, collections }: { collection: Collection; collections: readonly Collection[] }) {
   const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
   const restricted = collection.accessMode === 'Restricted'
@@ -102,6 +109,8 @@ function CollectionRow({ collection }: { collection: Collection }) {
       </div>
 
       {restricted && <GrantList collectionId={collection.id} />}
+
+      <CollectionRulesSection collection={collection} collections={collections} />
 
       {error && (
         <Alert tone="danger" className="mt-2">

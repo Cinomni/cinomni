@@ -12,12 +12,13 @@ under the rules in *Versioning* below.
 
 ### Added
 
-- **Rule-based collections (API only; the console screens follow).** A collection can carry rules on
+- **Rule-based collections.** In Console → Collections, a collection can carry rules on
   kind, genre, age rating, year, runtime, original language or title, and the collections are asked in
   an order you set: the first rule that matches decides which shelf a title sits on, and therefore who
   can see it. Every rule or order change can be previewed first, and the preview lists what would
   move, including titles that would fall back to the open default collection. Titles are placed when
-  they are added and again when their metadata arrives.
+  they are added and again when their metadata arrives. Saving is only possible after a preview, and
+  it warns when titles would leave a restricted collection for an open one.
 
 ### Changed
 

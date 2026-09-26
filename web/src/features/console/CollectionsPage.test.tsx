@@ -14,6 +14,7 @@ vi.mock('@/api/endpoints', () => ({
     collectionGrants: vi.fn(),
     grantCollection: vi.fn(),
     revokeCollection: vi.fn(),
+    collectionRules: vi.fn().mockResolvedValue([]),
   },
   identityApi: { users: vi.fn() },
 }))
@@ -25,6 +26,7 @@ const restricted: Collection = {
   accessMode: 'Restricted',
   isDefault: false,
   workCount: 3,
+  rulePriority: 1,
 }
 
 const nadia: UserAccount = {
