@@ -16,7 +16,7 @@ account whatever the interface shows.
 
 | Page | What it is for |
 |---|---|
-| **Collections** | Groups of titles, open to everyone or restricted to the accounts you grant. See [Users and access](users-and-access.md). |
+| **Collections** | Groups of titles, open to everyone or restricted to the accounts you grant, the rules that place titles in them, and the order those rules are applied in. See [Users and access](users-and-access.md#collections). |
 | **Wanted** | Monitored titles and episodes that are not in the library yet, with a **Search** button. An episode that has not aired is listed as unaired, not missing. |
 | **Imports** | Every import job: which files it matched, what it did to each (hardlink, copy, rename), and its history. Also *Library path repair*. See [Import and storage](import-and-storage.md). |
 | **Trending** | An optional list that adds TMDB trending titles to the catalog, unmonitored. Off until you enable **Add trending titles** in Settings → Catalog. |

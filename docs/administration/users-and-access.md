@@ -39,12 +39,72 @@ Each collection holds movies, series, or both, and is either:
 - **Open to everyone**: every account sees its titles; or
 - **Only who I grant**: only the member accounts you tick see its titles.
 
-To keep some titles for certain people, create a restricted collection, grant it to them, and move the
-titles into it. Administrators always see everything.
+To keep some titles for certain people, create a restricted collection, grant it to them, and give
+it rules that pick those titles. Administrators always see everything.
 
-> The web interface does not move a title between collections yet. Until it does, an administrator
-> can do it through the API: `PUT /api/catalog/works/{workId}/collection` with
-> `{"collectionId": "<id>"}`.
+### Rules
+
+A collection can carry a rule: one or more conditions that must all hold. A condition compares one
+fact about a title:
+
+| Field | Compared with |
+|---|---|
+| Kind | *is any of* / *is none of*: movie, series |
+| Genre, Content rating, Original language | *is any of* / *is none of*: a list of values |
+| Year | *is any of* / *is none of* a list, or *is at least* / *is at most* one year |
+| Runtime (minutes) | *is at least* / *is at most* |
+| Title | *contains* / *starts with*, plain text, not case sensitive |
+
+A condition never matches a fact the title does not have: a title with no known year matches neither
+*year is 1999* nor *year is none of 1999*. Whether a title is downloaded or how many episodes it has
+are not fields, on purpose: a title must not change who can see it because a download finished.
+
+A rule only places titles its collection can hold: a movies-only collection never claims a series.
+
+### Evaluation order
+
+A title can only be in one collection, so when the rules of several collections match it, the
+**evaluation order** at the top of **Console → Collections** decides: the first collection whose rule
+matches claims the title. A title no rule claims goes to the default collection, **Library**, which
+is open. That includes a title that stops matching, for example after you change a rule.
+
+### Preview before saving
+
+Saving a rule, removing one, or changing the order can move many titles at once, and moving a title
+changes who can see it. So **Save** only becomes available after **Preview**, which shows:
+
+- **Match**: the titles the rule matches;
+- **Would move**: the titles that would change collection, each with where it is and where it would go;
+- **Pinned, left alone**: titles the rule would move but that stay because they are pinned (below).
+
+When titles would leave a restricted collection for an open one, the preview and the confirmation
+both warn that more people would see them.
+
+To remove a collection's rule, remove all its conditions, then preview and save.
+
+### Titles placed by hand (pinned)
+
+Moving a title to a collection by hand **pins** it there: rules no longer move it until the pin is
+released. Releasing the pin places the title wherever the rules say at that moment.
+
+> The web interface does not move a single title or release a pin yet. Until it does, an
+> administrator can do both through the API: `PUT /api/catalog/works/{workId}/collection` with
+> `{"collectionId": "<id>"}` moves and pins, and `DELETE /api/catalog/works/{workId}/collection-pin`
+> releases the pin.
+
+When you upgrade to a version with rules, titles already outside **Library** are pinned, so saving
+the first rule cannot move them.
+
+### New titles while rules exist
+
+When a title is added, Cinomni only knows its kind, title and year; its genres and age rating arrive
+with its metadata a moment later. So while at least one rule exists, a new title is **hidden from
+members until its metadata arrives**, and then placed by the rules. This keeps a title a rule would
+restrict from being visible on the open **Library** in the meantime.
+
+Administrators see these titles, with a note on the title's page. If the metadata does not arrive,
+use **Refresh metadata** from the title's menu, or move the title by hand, which also releases it.
+A title added without a provider id is never held, because no metadata would ever arrive for it.
 
 ## Content ceiling (parental control)
 
