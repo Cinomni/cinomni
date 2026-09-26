@@ -104,7 +104,9 @@ export function RulePreviewSummary({
           ))}
         </ul>
       )}
-      <p className="text-xs text-faint">Showing the first page of affected titles, not all of them.</p>
+      {preview.works.length < preview.wouldMove + preview.pinnedSkipped && (
+        <p className="text-xs text-faint">Showing the first page of affected titles, not all of them.</p>
+      )}
     </div>
   )
 }

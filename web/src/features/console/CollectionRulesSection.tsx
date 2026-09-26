@@ -222,15 +222,22 @@ export function CollectionRulesSection({
   // One rule per collection is what this screen edits; a second is expressed as another condition.
   const rule = editing[0] ?? null
   const conditions = rule?.conditions ?? []
-  const problem = ruleProblem(conditions)
+  const hadRules = (rules.data?.length ?? 0) > 0
+  // Taking away every condition means "no rule here any more", not "a rule that matches everything":
+  // the set sent is empty, which the API reads as removing the collection's rules.
+  const removing = draft !== null && conditions.length === 0 && hadRules
+  const payload = conditions.length === 0 ? [] : editing
+  // Only an edit in progress can be wrong; a collection nobody is editing has nothing to report.
+  const problem = draft === null || conditions.length === 0 ? null : ruleProblem(conditions)
+  const changed = draft !== null && (conditions.length > 0 || hadRules)
 
   const runPreview = useMutation({
-    mutationFn: () => catalogApi.previewCollectionRules(collection.id, editing),
+    mutationFn: () => catalogApi.previewCollectionRules(collection.id, payload),
     onSuccess: setPreview,
   })
 
   const save = useMutation({
-    mutationFn: () => catalogApi.setCollectionRules(collection.id, editing),
+    mutationFn: () => catalogApi.setCollectionRules(collection.id, payload),
     onSuccess: async () => {
       setConfirming(false)
       setDraft(null)
@@ -273,7 +280,7 @@ export function CollectionRulesSection({
     <div className="mt-3 space-y-3 border-t border-line pt-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium text-fg">Rules</h3>
-        <span className="text-xs text-faint">Evaluated in order {collection.rulePriority}</span>
+        <span className="text-xs text-faint">Evaluated in order {collection.rulePriority + 1}</span>
       </div>
 
       <p className="text-sm text-muted">
@@ -281,7 +288,12 @@ export function CollectionRulesSection({
         and with it who can see it. The first collection whose rules match claims the title.
       </p>
 
-      {conditions.length === 0 ? (
+      {removing ? (
+        <p className="text-sm text-muted">
+          Saving removes this collection&apos;s rules. Titles they placed here go wherever the other rules put
+          them, or to the default collection, unless they were pinned by hand.
+        </p>
+      ) : conditions.length === 0 ? (
         <p className="text-sm text-faint">No rules. Titles reach this collection only by hand.</p>
       ) : (
         <div className="space-y-2">
@@ -315,7 +327,7 @@ export function CollectionRulesSection({
           size="sm"
           variant="subtle"
           loading={runPreview.isPending}
-          disabled={problem !== null || save.isPending}
+          disabled={!changed || problem !== null || save.isPending}
           onClick={() => runPreview.mutate()}
         >
           Preview
@@ -324,7 +336,7 @@ export function CollectionRulesSection({
           type="button"
           size="sm"
           // Deliberately gated on a preview: the operator sees what this does before it does it.
-          disabled={problem !== null || preview === null || save.isPending}
+          disabled={!changed || problem !== null || preview === null || save.isPending}
           onClick={() => setConfirming(true)}
         >
           Save rules
@@ -337,7 +349,7 @@ export function CollectionRulesSection({
         </p>
       )}
 
-      {preview === null && problem === null && conditions.length > 0 && (
+      {preview === null && problem === null && changed && (
         <p className="text-xs text-faint">Preview these rules to see what they would move before saving.</p>
       )}
 
@@ -363,13 +375,21 @@ export function CollectionRulesSection({
         title={`Apply these rules to ${collection.name}?`}
       >
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted">
-            {preview?.wouldMove ?? 0} {preview?.wouldMove === 1 ? 'title moves' : 'titles move'} onto{' '}
-            <span className="font-medium text-fg">{collection.name}</span>, which is{' '}
-            {collection.accessMode === 'Restricted'
-              ? 'restricted — only the accounts you granted will see them.'
-              : 'open — every account in the household will see them.'}
-          </p>
+          {removing ? (
+            <p className="text-sm text-muted">
+              {preview?.wouldMove ?? 0} {preview?.wouldMove === 1 ? 'title leaves' : 'titles leave'}{' '}
+              <span className="font-medium text-fg">{collection.name}</span> for the collection the remaining
+              rules choose, or the default one.
+            </p>
+          ) : (
+            <p className="text-sm text-muted">
+              {preview?.wouldMove ?? 0} {preview?.wouldMove === 1 ? 'title moves' : 'titles move'} onto{' '}
+              <span className="font-medium text-fg">{collection.name}</span>, which is{' '}
+              {collection.accessMode === 'Restricted'
+                ? 'restricted — only the accounts you granted will see them.'
+                : 'open — every account in the household will see them.'}
+            </p>
+          )}
           {preview && countNewlyExposed(preview, collections) > 0 && (
             <Alert tone="warning">
               Some of them are on a restricted shelf today. This is what makes them visible to
