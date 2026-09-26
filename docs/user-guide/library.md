@@ -43,5 +43,7 @@ What appears in the library can be limited per account:
   example for a child's account.
 
 A title you cannot see does not appear anywhere: not in the lists, not in search, not in Upcoming.
+A title that was just added can take a moment to appear: while it waits for its details, only
+administrators see it.
 **Your account → What you can watch** tells you whether a limit applies to you. See
 [Users and access](../administration/users-and-access.md).
