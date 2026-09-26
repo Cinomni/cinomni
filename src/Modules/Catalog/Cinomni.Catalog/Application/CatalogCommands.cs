@@ -12,7 +12,8 @@ public sealed class CatalogCommands(
     CatalogDbContext dbContext,
     IUnitOfWork unitOfWork,
     IEventBus eventBus,
-    SeriesStructureService seriesStructure)
+    SeriesStructureService seriesStructure,
+    CollectionPlacementService placement)
     : ICatalogCommands
 {
     // Match the mapped Work column widths (CatalogDbContext) so an ACL copy never overflows the write.
@@ -112,20 +113,29 @@ public sealed class CatalogCommands(
             }
         }
 
-        // A work always sits somewhere: the named collection, or the one the installation defaults to.
-        var collectionId = collection?.Value ?? await DefaultCollectionIdAsync(cancellationToken);
-
         var work = new Work
         {
             Id = Uuid7.New(),
             Kind = kind,
-            CollectionId = collectionId,
+            CollectionId = await DefaultCollectionIdAsync(cancellationToken),
             Title = normalizedTitle,
             SortTitle = SortTitles.Normalize(normalizedTitle),
             Year = year,
             Status = initialStatus,
             AddedAt = DateTimeOffset.UtcNow,
         };
+
+        // A work always sits somewhere. A collection named on the add is an operator's choice and pins
+        // the work there; otherwise the rules place it — by kind, title and year only for now, until
+        // enrichment brings genres and a rating and places it again.
+        if (collection is { } named)
+        {
+            work.PinTo(named.Value);
+        }
+        else
+        {
+            await placement.PlaceNewAsync(work, cancellationToken);
+        }
 
         foreach (var externalId in externalIds)
         {
@@ -287,8 +297,15 @@ public sealed class CatalogCommands(
             Text.Truncate(contentRating, LanguageMaxLength),
             Text.Truncate(overview?.Trim(), OverviewMaxLength));
 
+        // Enrichment is what brings the facts most rules read (genres arrive after the work does), so the
+        // work is re-placed in the same unit of work, after its own write has locked the row: it is never
+        // visible on its old shelf under new metadata, and a pin taken meanwhile is not overwritten.
         // Enrichment is a Catalog-internal write; no integration event (nothing downstream depends on it yet).
-        await unitOfWork.ExecuteAsync(async token => await dbContext.SaveChangesAsync(token), cancellationToken);
+        await unitOfWork.ExecuteAsync(async token =>
+        {
+            await dbContext.SaveChangesAsync(token);
+            await placement.PlaceExistingAsync(work.Id, token);
+        }, cancellationToken);
     }
 
     public async Task UpdateWorkArtworkAsync(

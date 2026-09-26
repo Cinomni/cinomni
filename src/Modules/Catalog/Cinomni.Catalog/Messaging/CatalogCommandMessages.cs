@@ -11,6 +11,7 @@ public static class CatalogCommandNames
     public const string SyncSeriesStructure = "catalog.sync-series-structure";
     public const string UpdateWorkArtwork = "catalog.update-work-artwork";
     public const string RefreshTrendingList = "catalog.refresh-trending-list";
+    public const string SweepCollectionPlacement = "catalog.sweep-collection-placement";
 }
 
 /// <summary>
@@ -64,3 +65,11 @@ public sealed record SyncSeriesStructureCommand(Guid WorkId, Guid SnapshotId) : 
 /// across redeliveries, unique per selection).
 /// </summary>
 public sealed record UpdateWorkArtworkCommand(Guid WorkId, string? PosterUrl, string? BackdropUrl) : ICommand;
+
+/// <summary>
+/// Re-places one batch of works under the current collection rules, then queues the batch after it —
+/// enqueued in the same unit of work as the rule or order change that needs it. The cursor is the last
+/// work id handled, so the chain resumes where it stopped after a restart. Idempotent by
+/// <c>collection-sweep:{RunId}:{After}</c>; a batch run twice moves nothing the second time.
+/// </summary>
+public sealed record SweepCollectionPlacementCommand(Guid RunId, Guid? After) : ICommand;

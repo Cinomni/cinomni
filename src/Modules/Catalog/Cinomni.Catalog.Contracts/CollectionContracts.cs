@@ -31,7 +31,6 @@ public enum CollectionAccessMode
     Restricted = 2,
 }
 
-/// <summary>A collection as listed: what it is, who may see it, and how much it holds.</summary>
 // THE AGREED CONTRACT FOR RULE-BASED COLLECTIONS. Recorded beside the engine because the engine is
 // built and the surface around it is not. Every point below was settled before implementation and
 // should not be re-derived.
@@ -126,6 +125,7 @@ public sealed record CollectionRule(
     string Name,
     IReadOnlyList<CollectionRuleCondition> Conditions);
 
+/// <summary>A collection as listed: what it is, who may see it, and how much it holds.</summary>
 /// <param name="RulePriority">
 /// Evaluation order across the installation; lower goes first, and the first rule that matches claims
 /// the work. It exists because a work lives in exactly one collection, so two rules matching the same
@@ -230,5 +230,96 @@ public interface ICollectionAdministration
 
     Task<Result> RevokeAsync(CollectionId id, Guid userId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Moves a work by hand and pins it there: the rules leave a pinned work alone until
+    /// <see cref="ICollectionRules.UnpinWorkAsync"/> releases it.
+    /// </summary>
     Task<Result> MoveWorkAsync(WorkId workId, CollectionId collectionId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// One rule as an administrator submits it. <see cref="Id"/> is the rule being kept when it names one
+/// of the collection's current rules, and a new rule otherwise — the set is replaced whole, so a rule
+/// left out is a rule deleted.
+/// </summary>
+public sealed record CollectionRuleDraft(
+    Guid? Id,
+    string Name,
+    IReadOnlyList<CollectionRuleCondition> Conditions);
+
+/// <summary>One title a preview reports: where it is now, and where the proposed rules would put it.</summary>
+/// <param name="Pinned">
+/// True when it was moved by hand and the rules will therefore leave it where it is; it is listed so
+/// the operator can see the override they are not overriding.
+/// </param>
+public sealed record RulePreviewWork(
+    WorkId Id,
+    string Title,
+    int? Year,
+    WorkKind Kind,
+    CollectionId CurrentCollectionId,
+    string CurrentCollectionName,
+    CollectionId TargetCollectionId,
+    string TargetCollectionName,
+    bool Pinned);
+
+/// <summary>
+/// What a rule change would do, before it does it. The three counts are not interchangeable: a pinned
+/// title matches and stays put, and a title already on its target shelf matches and does not move.
+/// </summary>
+/// <param name="Matched">The titles the proposed rules match, whether or not that moves them.</param>
+/// <param name="WouldMove">The titles that would change collection, and therefore audience.</param>
+/// <param name="PinnedSkipped">The titles the rules would move but a manual pin holds in place.</param>
+/// <param name="Works">
+/// The affected titles, moving ones first, capped at <see cref="MaxWorks"/>; the counts cover them all.
+/// </param>
+public sealed record RulePreview(
+    int Matched,
+    int WouldMove,
+    int PinnedSkipped,
+    IReadOnlyList<RulePreviewWork> Works)
+{
+    public const int MaxWorks = 100;
+}
+
+/// <summary>How many titles changed collection when a rule change was applied.</summary>
+public sealed record RulesApplied(int Moved);
+
+/// <summary>
+/// Operator surface for rule-based placement: the rules each collection carries, the order collections
+/// are asked in, a preview of both before they are saved, and the manual pin that takes a title out of
+/// the rules' reach. Every write here can change who may see a title, which is why each has a preview.
+/// </summary>
+public interface ICollectionRules
+{
+    /// <summary>The collection's rules in evaluation order, or a not-found failure.</summary>
+    Task<Result<IReadOnlyList<CollectionRule>>> RulesAsync(CollectionId id, CancellationToken cancellationToken = default);
+
+    /// <summary>What replacing the collection's rules with <paramref name="rules"/> would do. Nothing is saved.</summary>
+    Task<Result<RulePreview>> PreviewRulesAsync(
+        CollectionId id,
+        IReadOnlyList<CollectionRuleDraft> rules,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Replaces the collection's rules and re-places the library under them.</summary>
+    Task<Result<RulesApplied>> SetRulesAsync(
+        CollectionId id,
+        IReadOnlyList<CollectionRuleDraft> rules,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>What asking the collections in this order would do. Nothing is saved.</summary>
+    Task<Result<RulePreview>> PreviewRulePriorityAsync(
+        IReadOnlyList<CollectionId> order,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets the evaluation order. <paramref name="order"/> must name every collection exactly once, so no
+    /// two can tie and no partial order is ever stored.
+    /// </summary>
+    Task<Result<RulesApplied>> SetRulePriorityAsync(
+        IReadOnlyList<CollectionId> order,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Releases a manual pin and places the title where the rules now say.</summary>
+    Task<Result> UnpinWorkAsync(WorkId workId, CancellationToken cancellationToken = default);
 }

@@ -25,6 +25,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
 
     public DbSet<CollectionGrant> Grants => Set<CollectionGrant>();
 
+    public DbSet<StoredCollectionRule> CollectionRules => Set<StoredCollectionRule>();
+
     public DbSet<ImportListEntry> ImportListEntries => Set<ImportListEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -84,6 +86,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             .HasForeignKey(x => x.CollectionId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        MapCollectionRules(modelBuilder, work);
+
         MapSeriesHierarchy(modelBuilder, work);
 
         var external = modelBuilder.Entity<ExternalIdentifier>();
@@ -113,6 +117,33 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             .WithOne()
             .HasForeignKey(x => x.WorkId)
             .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    /// <summary>
+    /// Maps the rules collections carry and the two facts a work keeps about them: whether it is pinned,
+    /// and which rule placed it. Deleting a rule clears that pointer rather than blocking the delete —
+    /// the sweep that follows every rule change re-places the work anyway.
+    /// </summary>
+    private static void MapCollectionRules(ModelBuilder modelBuilder, EntityTypeBuilder<Work> work)
+    {
+        var rule = modelBuilder.Entity<StoredCollectionRule>();
+        rule.ToTable("collection_rules");
+        rule.HasKey(x => x.Id);
+        rule.Property(x => x.Name).HasMaxLength(StoredCollectionRule.NameMax);
+        rule.Property(x => x.ConditionsJson).HasColumnName("conditions").HasColumnType("jsonb");
+        // Every placement reads the rules of every collection in order.
+        rule.HasIndex(x => new { x.CollectionId, x.Position }).HasDatabaseName("ix_collection_rules_collection_position");
+        rule.HasOne<Collection>()
+            .WithMany()
+            .HasForeignKey(x => x.CollectionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        work.Property(x => x.CollectionPinned).HasDefaultValue(false);
+        work.HasOne<StoredCollectionRule>()
+            .WithMany()
+            .HasForeignKey(x => x.PlacedByRuleId)
+            .OnDelete(DeleteBehavior.SetNull);
+        work.HasIndex(x => x.PlacedByRuleId).HasDatabaseName("ix_works_placed_by_rule");
     }
 
     /// <summary>

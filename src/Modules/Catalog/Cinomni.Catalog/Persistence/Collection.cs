@@ -26,18 +26,39 @@ public sealed class Collection
 
     public DateTimeOffset CreatedAt { get; init; }
 
-    public static Collection Create(string name, CollectionKind kind, CollectionAccessMode accessMode, DateTimeOffset now) => new()
+    /// <summary>
+    /// Where this collection's rules sit in the installation-wide order: lower is asked first, and the
+    /// first rule that matches claims the work. Replaced only as a complete list, so two collections
+    /// share a value only if they were created at the same instant — and <see cref="Id"/> breaks that tie.
+    /// </summary>
+    public int RulePriority { get; set; }
+
+    /// <summary>Whether a work of <paramref name="kind"/> may sit here. A rule never claims a work its shelf does not hold.</summary>
+    public static bool Holds(CollectionKind collection, WorkKind kind) => collection switch
+    {
+        CollectionKind.Movies => kind == WorkKind.Movie,
+        CollectionKind.Series => kind == WorkKind.Series,
+        _ => true,
+    };
+
+    public static Collection Create(
+        string name,
+        CollectionKind kind,
+        CollectionAccessMode accessMode,
+        int rulePriority,
+        DateTimeOffset now) => new()
     {
         Id = Uuid7.New(),
         Name = Text.Truncate(name.Trim(), NameMax)!,
         Kind = kind,
         AccessMode = accessMode,
         IsDefault = false,
+        RulePriority = rulePriority,
         CreatedAt = now,
     };
 
     public CollectionSummary ToSummary(int workCount) =>
-        new(new CollectionId(Id), Name, Kind, AccessMode, IsDefault, workCount);
+        new(new CollectionId(Id), Name, Kind, AccessMode, IsDefault, workCount, RulePriority);
 }
 
 /// <summary>

@@ -50,6 +50,7 @@ public static class CatalogModule
         services.AddCommand<SyncSeriesStructureCommand>(CatalogCommandNames.SyncSeriesStructure);
         services.AddCommand<UpdateWorkArtworkCommand>(CatalogCommandNames.UpdateWorkArtwork);
         services.AddCommand<RefreshTrendingListCommand>(CatalogCommandNames.RefreshTrendingList);
+        services.AddCommand<SweepCollectionPlacementCommand>(CatalogCommandNames.SweepCollectionPlacement);
 
         services.AddScoped<SeriesStructureService>();
         services.AddScoped<ICatalogCommands, CatalogCommands>();
@@ -65,6 +66,10 @@ public static class CatalogModule
         services.AddScoped<IContentAccess>(sp => sp.GetRequiredService<ContentAccess>());
         services.AddScoped<ICatalogBrowse, CatalogBrowse>();
         services.AddScoped<ICollectionAdministration, CollectionAdministration>();
+        // Rule-based placement: one decision shared by add, enrichment, the sweep and the preview.
+        services.AddScoped<CollectionPlacementService>();
+        services.AddScoped<ICollectionRules, CollectionRuleAdministration>();
+        services.AddScoped<ICommandHandler<SweepCollectionPlacementCommand>, SweepCollectionPlacementCommandHandler>();
 
         services.AddScoped<ICommandHandler<MarkWorkAvailableCommand>, MarkWorkAvailableCommandHandler>();
         services.AddScoped<ICommandHandler<MarkEpisodeAvailableCommand>, MarkEpisodeAvailableCommandHandler>();
