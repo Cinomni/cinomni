@@ -67,7 +67,7 @@ services:
     restart: unless-stopped
 
   cinomni:
-    image: ghcr.io/cinomni/cinomni:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}
+    image: ghcr.io/cinomni/cinomni:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.2}
     platform: linux/amd64
     depends_on:
       postgres:
@@ -180,7 +180,7 @@ services:
     restart: unless-stopped
 
   torrent-sidecar:
-    image: ghcr.io/cinomni/cinomni-torrent-sidecar:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}
+    image: ghcr.io/cinomni/cinomni-torrent-sidecar:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.2}
     platform: linux/amd64
     labels:
       # No default, so `docker compose up` stops here until the operator has decided how this container
@@ -233,7 +233,7 @@ services:
     restart: unless-stopped
 
   indexer-egress:
-    image: ghcr.io/cinomni/cinomni-indexer-egress:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}
+    image: ghcr.io/cinomni/cinomni-indexer-egress:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.2}
     platform: linux/amd64
     networks:
       # The only bridge between browser control and internet-capable edge networking.
@@ -255,7 +255,7 @@ services:
     restart: unless-stopped
 
   flaresolverr:
-    image: ghcr.io/cinomni/cinomni-flaresolverr:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}
+    image: ghcr.io/cinomni/cinomni-flaresolverr:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.2}
     platform: linux/amd64
     depends_on:
       indexer-egress:

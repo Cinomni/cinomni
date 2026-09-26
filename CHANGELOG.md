@@ -10,6 +10,17 @@ under the rules in *Versioning* below.
 
 ## Unreleased
 
+Nothing yet.
+
+## [0.1.0-alpha.2] - 2026-09-26
+
+**Collections that fill themselves.** Titles can now be placed on collections by rules instead of
+only by hand, and because a collection decides who can see a title, every change is previewed
+before it is saved. Still an alpha: read *Versioning* for what that promises.
+
+**Known gaps in this alpha:** the four listed under 0.1.0-alpha.1 still apply, and moving a single
+title to a collection by hand, or releasing its pin, has no console screen yet (the API has both).
+
 ### Added
 
 - **Rule-based collections.** In Console → Collections, a collection can carry rules on
@@ -30,7 +41,9 @@ under the rules in *Versioning* below.
 - **Moving a title to a collection by hand now pins it there.** Rules leave a pinned title alone until
   the pin is released.
 
-### Upgrading
+### Upgrade notes
+
+Take a backup first, as for any upgrade. Nothing needs doing by hand: the migrations run on start.
 
 - Titles that already sit outside the default collection are pinned by the upgrade, so saving the
   first rule cannot move them and nobody gains or loses sight of anything. Existing collections are

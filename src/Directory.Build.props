@@ -14,6 +14,6 @@
     <!-- The version this source is. The one place it is written: a release bumps it here (see
          Versioning in CHANGELOG.md), and an image build may override it with CINOMNI_VERSION. The SDK
          derives the four-part AssemblyVersion from the part before the suffix. -->
-    <Version>0.1.0-alpha.1</Version>
+    <Version>0.1.0-alpha.2</Version>
   </PropertyGroup>
 </Project>

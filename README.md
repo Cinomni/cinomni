@@ -26,7 +26,7 @@ indexers **you** configure, fetches them with a built-in BitTorrent client, impo
 adds subtitles, and streams them to your devices, all in one **modular monolith** (.NET 10 +
 PostgreSQL 16) with a React + TypeScript web client.
 
-> **Status: alpha, current version `0.1.0-alpha.1`.** Movies and series work end to end (catalog,
+> **Status: alpha, current version `0.1.0-alpha.2`.** Movies and series work end to end (catalog,
 > monitoring, discovery, decision, downloads, import, library, subtitles and playback), with
 > requests, notifications, an operator console and two-factor sign-in on top. An alpha has known gaps
 > and no upgrade history yet: read the release notes in **[CHANGELOG.md](./CHANGELOG.md)** before

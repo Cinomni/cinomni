@@ -56,7 +56,7 @@
 services:
   cinomni:
     # Built from a checkout instead: docker-compose.build.yml with CINOMNI_BUILD_TARGET=runtime-hwaccel.
-    image: ghcr.io/cinomni/cinomni:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.1}-hwaccel
+    image: ghcr.io/cinomni/cinomni:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.2}-hwaccel
     devices:
       - /dev/dri:/dev/dri
     group_add:
