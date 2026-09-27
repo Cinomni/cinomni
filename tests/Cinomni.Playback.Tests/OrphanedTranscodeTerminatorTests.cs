@@ -75,7 +75,9 @@ public sealed class OrphanedTranscodeTerminatorTests : IDisposable
     [Fact]
     public async Task An_id_nothing_runs_under_any_more_is_nothing_to_stop()
     {
-        var gone = FfmpegProcess.Start(TestShell.Command(windows: "exit 0", unix: "exit 0"));
+        // Stopped by the test rather than left to exit on its own: a process that is already gone when
+        // it is handed over has no start time to record, so it would have no identity to check against.
+        var gone = FfmpegProcess.Start(TestShell.LongRunning());
         var processId = Id(gone);
         var startedAt = Start(gone);
         await gone.DisposeAsync();
