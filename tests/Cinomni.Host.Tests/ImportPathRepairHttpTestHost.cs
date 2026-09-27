@@ -58,6 +58,9 @@ internal static class ImportPathRepairHttpTestHost
         builder.Services.AddSingleton(new ImportOptions { LibraryRoot = LibraryRoot });
         builder.Services.AddSingleton<IImportFileSystem>(fileSystem);
 
+        // This host is started, so its hosted services run; the tests drain the queue themselves.
+        builder.Services.WithoutMessageWorkers();
+
         var app = builder.Build();
 
         await using (var scope = app.Services.CreateAsyncScope())
