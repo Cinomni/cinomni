@@ -112,13 +112,27 @@ public static class OffsetSearch
         var bestCoarse = -MaxOffsetFrames + (ArgMax(coarse) * CoarseStepFrames);
         var (bestOffset, score) = Refine(bestCoarse, offset => Sum(windows, series, offset).Phi());
 
+        // The best rival more than 2 s away, refined the way the best match was: compared at its coarse
+        // 100 ms sample, a rival could read up to half a step low and make the margin look clearer than
+        // it is. A refinement that drifts back inside the exclusion keeps the coarse value instead.
         var outside = double.NegativeInfinity;
+        var rival = int.MinValue;
         for (var k = 0; k < coarseCount; k++)
         {
             var offset = -MaxOffsetFrames + (k * CoarseStepFrames);
-            if (Math.Abs(offset - bestOffset) > MarginExclusionFrames)
+            if (Math.Abs(offset - bestOffset) > MarginExclusionFrames && coarse[k] > outside)
             {
-                outside = Math.Max(outside, coarse[k]);
+                outside = coarse[k];
+                rival = offset;
+            }
+        }
+
+        if (rival != int.MinValue)
+        {
+            var (rivalOffset, rivalScore) = Refine(rival, offset => Sum(windows, series, offset).Phi());
+            if (Math.Abs(rivalOffset - bestOffset) > MarginExclusionFrames)
+            {
+                outside = Math.Max(outside, rivalScore);
             }
         }
 

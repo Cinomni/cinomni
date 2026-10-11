@@ -45,89 +45,107 @@ public sealed class SubtitleSyncCommands(
             return Result.Failure(Disabled);
         }
 
-        var subtitle = await dbContext.Assets.AsNoTracking().FirstOrDefaultAsync(asset => asset.Id == id.Value, cancellationToken);
-        if (subtitle is null)
-        {
-            return Result.Failure(NotFound);
-        }
-
-        var search = await dbContext.Searches.FirstOrDefaultAsync(row => row.Id == subtitle.SearchId, cancellationToken);
-        if (search is null)
-        {
-            return Result.Failure(NotFound);
-        }
-
-        if (search.State == SubtitleSearchState.Syncing)
-        {
-            return Result.Failure(InProgress);
-        }
-
-        if (search.State != SubtitleSearchState.Available || search.SubtitleAssetId != subtitle.Id)
-        {
-            return Result.Failure(NotDownloaded);
-        }
-
         var now = DateTimeOffset.UtcNow;
+        var result = Result.Failure(NotFound);
         try
         {
             await unitOfWork.ExecuteAsync(async token =>
             {
+                // Decided under the subtitle's lock, so a revert or a pass completing at the same moment is
+                // either already visible here or waits for this to commit.
+                var subtitle = await dbContext.LockAsync(id.Value, token);
+                var search = subtitle is null
+                    ? null
+                    : await dbContext.Searches.FirstOrDefaultAsync(row => row.Id == subtitle.SearchId, token);
+                if (subtitle is null || search is null)
+                {
+                    result = Result.Failure(NotFound);
+                    return;
+                }
+
+                if (search.State == SubtitleSearchState.Syncing)
+                {
+                    result = Result.Failure(InProgress);
+                    return;
+                }
+
+                if (search.State != SubtitleSearchState.Available || search.SubtitleAssetId != subtitle.Id)
+                {
+                    result = Result.Failure(NotDownloaded);
+                    return;
+                }
+
                 search.BeginResync(now);
                 dbContext.SyncWork.Add(SubtitleSyncWork.Create(subtitle.Id, search.Id, now));
                 await dbContext.SaveChangesAsync(token);
+                result = Result.Success();
             }, cancellationToken);
         }
         catch (DbUpdateException)
         {
-            // A second request raced this one and queued the same subtitle first: the row's key is the
-            // subtitle, so only one pass is ever pending.
+            // A pending row for this subtitle already exists (its key is the subtitle), so only one pass
+            // is ever pending.
             return Result.Failure(InProgress);
         }
 
-        return Result.Success();
+        return result;
     }
 
     /// <summary>Plays the downloaded file again and records that an administrator chose it.</summary>
     public async Task<Result> RevertAsync(SubtitleAssetId id, CancellationToken cancellationToken = default)
     {
-        var subtitle = await dbContext.Assets.FirstOrDefaultAsync(asset => asset.Id == id.Value, cancellationToken);
-        if (subtitle is null)
-        {
-            return Result.Failure(NotFound);
-        }
-
-        var syncing = await dbContext.Searches.AnyAsync(
-            row => row.Id == subtitle.SearchId && row.State == SubtitleSearchState.Syncing, cancellationToken);
-        if (syncing)
-        {
-            return Result.Failure(InProgress);
-        }
-
-        if (!subtitle.IsSynced)
-        {
-            return Result.Failure(NotSynced);
-        }
-
-        var synced = subtitle.Path;
         var now = DateTimeOffset.UtcNow;
+        var result = Result.Failure(NotFound);
+        (string Path, string Beside)? released = null;
         await unitOfWork.ExecuteAsync(async token =>
         {
+            // Checked and changed under the subtitle's lock. Outside it, a re-sync could queue between the
+            // check and the commit and its pass would then quietly undo this revert; and of two reverts at
+            // once, the second now finds nothing left to revert instead of recording a second one.
+            var subtitle = await dbContext.LockAsync(id.Value, token);
+            if (subtitle is null)
+            {
+                result = Result.Failure(NotFound);
+                return;
+            }
+
+            var syncing = await dbContext.Searches.AnyAsync(
+                row => row.Id == subtitle.SearchId && row.State == SubtitleSearchState.Syncing, token);
+            if (syncing)
+            {
+                result = Result.Failure(InProgress);
+                return;
+            }
+
+            if (!subtitle.IsSynced)
+            {
+                result = Result.Failure(NotSynced);
+                return;
+            }
+
+            released = (subtitle.Path, subtitle.OriginalPath);
             subtitle.UseOriginal();
             dbContext.SyncDecisions.Add(SubtitleSyncDecision.Unmeasured(
                 subtitle.Id, SubtitleSyncOutcome.Reverted, "Reverted to the downloaded file by an administrator.", now));
             await dbContext.SaveChangesAsync(token);
+            result = Result.Success();
         }, cancellationToken);
 
-        try
+        if (released is { } copy)
         {
-            await fileStore.DeleteSyncedAsync(synced, cancellationToken);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Nothing points at it any more; a leftover copy is untidy, not wrong.
-            logger.LogWarning(ex, "The synchronized copy of subtitle {SubtitleId} could not be removed.", subtitle.Id);
+            try
+            {
+                // Every pass writes under a name of its own, so this is the copy that was being played
+                // and never one a later pass has written since.
+                await fileStore.DeleteSyncedAsync(copy.Path, copy.Beside, CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Nothing points at it any more; a leftover copy is untidy, not wrong.
+                logger.LogWarning(ex, "The synchronized copy of subtitle {SubtitleId} could not be removed.", id.Value);
+            }
         }
 
-        return Result.Success();
+        return result;
     }
 }

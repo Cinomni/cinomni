@@ -76,6 +76,12 @@ namespace Cinomni.Subtitles.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Before the column that remembers the download goes, every subtitle is pointed back at it:
+            // a rolled-back installation knows nothing of synchronized copies, and would otherwise keep
+            // playing a shifted copy it can no longer revert. The copies stay on disk, unreferenced.
+            migrationBuilder.Sql(
+                "UPDATE subtitles.subtitle_assets SET path = original_path WHERE path <> original_path;");
+
             migrationBuilder.DropTable(
                 name: "subtitle_sync_decisions",
                 schema: "subtitles");

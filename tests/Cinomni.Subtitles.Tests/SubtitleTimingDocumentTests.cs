@@ -26,9 +26,10 @@ public sealed class SubtitleTimingDocumentTests
     }
 
     [Fact]
-    public void Crlf_line_endings_and_a_byte_order_mark_survive_the_rewrite()
+    public void A_marked_crlf_download_is_decoded_and_rewritten_with_its_line_endings()
     {
-        // Arrange — UTF-8 with a BOM and Windows line endings, as many downloads are.
+        // Arrange — UTF-8 with a BOM and Windows line endings, as many downloads are. The text comes
+        // back without the mark; the analyzer puts it back on the bytes it writes.
         var bytes = Encoding.UTF8.GetPreamble()
             .Concat(Encoding.UTF8.GetBytes("1\r\n00:00:05,000 --> 00:00:06,000\r\nÇa va ?\r\n"))
             .ToArray();
@@ -145,5 +146,24 @@ public sealed class SubtitleTimingDocumentTests
     {
         Assert.True(SubtitleTimingDocument.TryParse(text, format, out var document, out var failure), failure);
         return document!;
+    }
+
+    [Fact]
+    public void A_file_of_nothing_but_line_breaks_is_refused_before_it_is_split()
+    {
+        var text = new string('\n', SubtitleTimingDocument.MaxLines + 1);
+
+        Assert.False(SubtitleTimingDocument.TryParse(text, SubtitleFormat.Srt, out _, out var failure));
+        Assert.Contains("lines", failure, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Digits_from_another_script_are_not_a_timestamp_and_do_not_throw()
+    {
+        // Arabic-Indic digits match \d in .NET; read as a timestamp they would fail to parse.
+        const string srt = "1\n\u0660\u0660:\u0660\u0660:\u0660\u0661,\u0660\u0660\u0660 --> 00:00:02,000\nA\n\n2\n00:00:03,000 --> 00:00:04,000\nB\n";
+
+        Assert.True(SubtitleTimingDocument.TryParse(srt, SubtitleFormat.Srt, out var document, out _));
+        Assert.Single(document!.Cues);
     }
 }

@@ -40,6 +40,14 @@ public sealed class SubtitleSyncAnalyzer(
 
     public async Task<SyncAnalysis> AnalyzeAsync(SyncSubject subject, CancellationToken cancellationToken = default)
     {
+        // Turned off since this pass was queued (a re-sync, or a backlog from before the switch). That
+        // says nothing about the subtitle, so it is a failure that keeps what is played — reported as
+        // unsupported, it would put the original back over a copy an earlier pass had applied.
+        if (!options.Enabled)
+        {
+            return Keep(SubtitleSyncOutcome.Failed, "synchronization is turned off");
+        }
+
         if (Unsupported(subject.Format, subject.Forced, options) is { } reason)
         {
             return Keep(SubtitleSyncOutcome.Unsupported, reason);
@@ -83,9 +91,22 @@ public sealed class SubtitleSyncAnalyzer(
 
         var verdict = SyncDecider.Decide(OffsetSearch.Estimate(windows, document!.Cues), plan.Count, options);
         return verdict.Outcome == SubtitleSyncOutcome.Applied
-            ? new SyncAnalysis(verdict, Utf8.GetBytes(document.Shift(verdict.OffsetMs, verdict.Ratio)))
+            ? new SyncAnalysis(verdict, Encode(document.Shift(verdict.OffsetMs, verdict.Ratio), bytes))
             : new SyncAnalysis(verdict, null);
     }
+
+    /// <summary>
+    /// The copy is always UTF-8, whatever the download was decoded from — every player reads it, and a
+    /// legacy code page cannot hold every character a decoded file may contain. A download that started
+    /// with a UTF-8 byte order mark gets one back, because some players only take UTF-8 when it is marked.
+    /// </summary>
+    private static byte[] Encode(string text, byte[] original)
+    {
+        var encoded = Utf8.GetBytes(text);
+        return original.AsSpan().StartsWith(Utf8Bom) ? [.. Utf8Bom, .. encoded] : encoded;
+    }
+
+    private static readonly byte[] Utf8Bom = [0xEF, 0xBB, 0xBF];
 
     /// <summary>
     /// Why a subtitle is out of scope before anything is decoded, or null when it is in scope. ASS

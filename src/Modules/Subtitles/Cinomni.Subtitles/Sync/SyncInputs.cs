@@ -6,12 +6,16 @@ namespace Cinomni.Subtitles.Sync;
 /// Which stretches of the video are decoded: one near the start, one in the middle and one near the
 /// end, so a subtitle that drifts (a frame-rate mismatch) shows up as three different offsets instead
 /// of passing as one. The start and end stretches stay clear of the opening and closing credits, which
-/// carry music and no dialogue. A video too short for three stretches, or whose length nobody
-/// recorded, is sampled once from the beginning.
+/// carry music and no dialogue. A video too short for three stretches still gets two, from either end
+/// of it, so the match is still checked against a second part of the video. Only one too short even for
+/// that, or whose length nobody recorded, is sampled once from the beginning — and the decision then asks
+/// for a clearer match to make up for having nothing to cross-check it with (<see cref="SyncDecider"/>).
 /// </summary>
 public static class SyncWindowPlan
 {
     private static readonly TimeSpan ShortestForThree = TimeSpan.FromMinutes(12);
+
+    private static readonly TimeSpan ShortestForTwo = TimeSpan.FromMinutes(4);
 
     public static IReadOnlyList<(TimeSpan Start, TimeSpan Length)> For(double? durationSeconds, TimeSpan maxLength)
     {
@@ -21,9 +25,20 @@ public static class SyncWindowPlan
         }
 
         var duration = TimeSpan.FromSeconds(seconds);
-        if (duration < ShortestForThree)
+        if (duration < ShortestForTwo)
         {
             return [(TimeSpan.Zero, duration < maxLength ? duration : maxLength)];
+        }
+
+        if (duration < ShortestForThree)
+        {
+            // Two stretches that do not overlap: from a tenth in, and ending a tenth before the end.
+            var half = duration * 0.4 < maxLength ? duration * 0.4 : maxLength;
+            return
+            [
+                (duration * 0.10, half),
+                (duration * 0.90 - half, half),
+            ];
         }
 
         var length = duration / 4 < maxLength ? duration / 4 : maxLength;

@@ -30,6 +30,13 @@ public static class SyncDecider
     /// <summary>Closer than this at the same speed is in sync already: nobody sees a tenth of a second.</summary>
     public const long InSyncToleranceMs = 100;
 
+    /// <summary>
+    /// How much clearer a match must be when the video was sampled only once. With one stretch there is
+    /// no second part of the video to confirm the offset, so score and margin are all that stand between
+    /// a cold open that happens to line up and a shift applied to the whole film.
+    /// </summary>
+    public const double SingleWindowStrictness = 1.4;
+
     public static SyncVerdict Decide(SyncEstimate? estimate, int windowCount, SubtitleSyncOptions options)
     {
         if (estimate is null || estimate.WindowOffsetsMs.Count == 0)
@@ -39,19 +46,24 @@ public static class SyncDecider
                 "Low confidence: the sampled parts of the video have too little speech or dialogue to compare.");
         }
 
-        if (estimate.Score < options.MinScore)
+        var strictness = windowCount == 1 ? SingleWindowStrictness : 1.0;
+        var minScore = Math.Min(1, options.MinScore * strictness);
+        var minMargin = options.MinMargin * strictness;
+        var sampledOnce = windowCount == 1 ? " (a stricter bar: the video was too short to sample more than once)" : string.Empty;
+
+        if (estimate.Score < minScore)
         {
             return LowConfidence(
                 estimate,
-                Invariant($"the best match scores {estimate.Score:0.00}, below the {options.MinScore:0.00} required."));
+                Invariant($"the best match scores {estimate.Score:0.00}, below the {minScore:0.00} required{sampledOnce}."));
         }
 
-        if (estimate.Margin < options.MinMargin)
+        if (estimate.Margin < minMargin)
         {
             return LowConfidence(
                 estimate,
                 Invariant($"the best match ({Seconds(estimate.OffsetMs)}) is not clearly better than others more than 2 s away ") +
-                Invariant($"(margin {estimate.Margin:0.00}, {options.MinMargin:0.00} required)."));
+                Invariant($"(margin {estimate.Margin:0.00}, {minMargin:0.00} required{sampledOnce})."));
         }
 
         var required = Math.Min(2, windowCount);
