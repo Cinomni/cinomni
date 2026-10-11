@@ -24,6 +24,15 @@ public sealed class SubtitleBrowse(ISubtitleQuery searches, ILibraryQuery librar
             ? await searches.ListForAssetAsync(assetId, cancellationToken)
             : [];
 
+    /// <summary>The subtitles obtained for an asset the viewer may see, each with its latest sync decision.</summary>
+    public async Task<IReadOnlyList<SubtitleAssetSummary>> ListObtainedAsync(
+        Viewer viewer,
+        Guid assetId,
+        CancellationToken cancellationToken = default) =>
+        await CanSeeAssetAsync(viewer, assetId, cancellationToken)
+            ? await searches.ListObtainedAsync(assetId, cancellationToken)
+            : [];
+
     public async Task<SubtitleSearchDetail?> GetAsync(
         Viewer viewer,
         SubtitleSearchId searchId,

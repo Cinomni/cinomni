@@ -7,7 +7,8 @@ namespace Cinomni.Subtitles.Persistence;
 /// The Subtitles aggregate root: the search for one missing subtitle language on a media asset.
 /// Its finite-state machine is pure, guarded logic. A search that finds nothing over the score
 /// threshold goes to <see cref="SubtitleSearchState.NotFound"/> and waits for an adaptive re-search
-/// rather than failing outright; a downloaded subtitle lands it in <see cref="SubtitleSearchState.Available"/>.
+/// rather than failing outright; a downloaded subtitle lands it in <see cref="SubtitleSearchState.Available"/>,
+/// directly or through <see cref="SubtitleSearchState.Syncing"/> while its timing is checked.
 /// Keyed by <c>(asset, language, forced, hi)</c> so a redelivered trigger reuses it.
 /// </summary>
 public sealed class SubtitleSearch
@@ -100,6 +101,44 @@ public sealed class SubtitleSearch
         Require(SubtitleSearchState.Downloading);
         SubtitleAssetId = subtitleAssetId;
         Transition(SubtitleSearchState.Available, now);
+    }
+
+    /// <summary>
+    /// Downloading → Syncing: the subtitle landed and is registered (and playable as downloaded), and its
+    /// timing is now checked against the audio. The subtitle is recorded here, not at
+    /// <see cref="CompleteSync"/>, because it exists from this moment whatever the check decides.
+    /// </summary>
+    public void BeginSync(Guid subtitleAssetId, DateTimeOffset now)
+    {
+        Require(SubtitleSearchState.Downloading);
+        SubtitleAssetId = subtitleAssetId;
+        Transition(SubtitleSearchState.Syncing, now);
+    }
+
+    /// <summary>
+    /// Syncing → Available: the check reached a decision, any decision. A failed or unconvincing analysis
+    /// ends here too, keeping the file as downloaded: synchronization never holds a subtitle back.
+    /// </summary>
+    public void CompleteSync(DateTimeOffset now)
+    {
+        Require(SubtitleSearchState.Syncing);
+        Transition(SubtitleSearchState.Available, now);
+    }
+
+    /// <summary>
+    /// Available → Syncing: an administrator asked for the timing to be checked again. Only a search that
+    /// landed a subtitle has anything to check; one marked present without a download does not.
+    /// </summary>
+    public void BeginResync(DateTimeOffset now)
+    {
+        Require(SubtitleSearchState.Available);
+        if (SubtitleAssetId is null)
+        {
+            throw new InvalidOperationException(
+                $"Illegal subtitle-search transition from {State} for search {Id}: no subtitle was downloaded to synchronize.");
+        }
+
+        Transition(SubtitleSearchState.Syncing, now);
     }
 
     /// <summary>

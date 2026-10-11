@@ -30,11 +30,22 @@ public sealed class SubtitleAsset
     public SubtitleFormat Format { get; init; }
 
     /// <summary>
-    /// Where the sidecar sits. Settable only from inside the entity (see <see cref="Relocate"/>): the
-    /// file is named from the video's stem and lives in its directory, so it moves when the video does
+    /// The file played: the download as it landed, or the synchronized copy beside it. Settable only from
+    /// inside the entity (see <see cref="Relocate"/>, <see cref="UseSynced"/>, <see cref="UseOriginal"/>):
+    /// the file is named from the video's stem and lives in its directory, so it moves when the video does
     /// and this row has to follow it.
     /// </summary>
     public string Path { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// The file as it was downloaded. Synchronization never writes to it: it is what every analysis reads,
+    /// so a second pass starts from the provider's timing rather than compounding the first one's shift,
+    /// and it is what a revert puts back.
+    /// </summary>
+    public string OriginalPath { get; private set; } = string.Empty;
+
+    /// <summary>Whether the file played is a synchronized copy rather than the download itself.</summary>
+    public bool IsSynced => !string.Equals(Path, OriginalPath, StringComparison.Ordinal);
 
     public required string Provider { get; init; }
 
@@ -62,14 +73,26 @@ public sealed class SubtitleAsset
         HearingImpaired = hearingImpaired,
         Format = format,
         Path = Text.Truncate(path, PathMaxLength)!,
+        OriginalPath = Text.Truncate(path, PathMaxLength)!,
         Provider = Text.Truncate(provider, ProviderMaxLength)!,
         Score = score,
         CreatedAt = now,
     };
 
     /// <summary>
-    /// Records that the sidecar now sits at <paramref name="path"/>, after Import moved it along with
-    /// the video it belongs to. Idempotent: repeating it with the stored path changes nothing.
+    /// Records that the sidecars now sit at <paramref name="path"/> and <paramref name="originalPath"/>,
+    /// after Import moved them along with the video they belong to. Both move: a synchronized copy is a
+    /// sidecar of the same video. Idempotent: repeating it with the stored paths changes nothing.
     /// </summary>
-    public void Relocate(string path) => Path = Text.Truncate(path, PathMaxLength)!;
+    public void Relocate(string path, string originalPath)
+    {
+        Path = Text.Truncate(path, PathMaxLength)!;
+        OriginalPath = Text.Truncate(originalPath, PathMaxLength)!;
+    }
+
+    /// <summary>Plays the synchronized copy at <paramref name="syncedPath"/> from now on; the original stays.</summary>
+    public void UseSynced(string syncedPath) => Path = Text.Truncate(syncedPath, PathMaxLength)!;
+
+    /// <summary>Plays the file as downloaded again.</summary>
+    public void UseOriginal() => Path = OriginalPath;
 }

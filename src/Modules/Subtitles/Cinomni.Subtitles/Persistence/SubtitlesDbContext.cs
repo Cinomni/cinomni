@@ -4,7 +4,8 @@ namespace Cinomni.Subtitles.Persistence;
 
 /// <summary>
 /// EF Core context for the Subtitles module. Owns the <c>subtitles</c> schema: the
-/// searches with their scored candidates, and the obtained subtitle assets. Profiles/requirements are
+/// searches with their scored candidates, the obtained subtitle assets, the synchronization work still
+/// pending and the append-only history of synchronization decisions. Profiles/requirements are
 /// configuration for the movie slice; providers, evaluations and upgrades are materialised when a
 /// later slice needs them.
 /// </summary>
@@ -18,6 +19,10 @@ public sealed class SubtitlesDbContext(DbContextOptions<SubtitlesDbContext> opti
     public DbSet<SubtitleCandidate> Candidates => Set<SubtitleCandidate>();
 
     public DbSet<SubtitleAsset> Assets => Set<SubtitleAsset>();
+
+    public DbSet<SubtitleSyncWork> SyncWork => Set<SubtitleSyncWork>();
+
+    public DbSet<SubtitleSyncDecision> SyncDecisions => Set<SubtitleSyncDecision>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,7 +52,24 @@ public sealed class SubtitlesDbContext(DbContextOptions<SubtitlesDbContext> opti
         asset.Property(x => x.Format).HasConversion<string>().HasMaxLength(20);
         asset.Property(x => x.Language).HasMaxLength(20);
         asset.Property(x => x.Path).HasMaxLength(2048);
+        asset.Property(x => x.OriginalPath).HasMaxLength(2048);
         asset.Property(x => x.Provider).HasMaxLength(200);
+        asset.Ignore(x => x.IsSynced);
         asset.HasIndex(x => x.AssetId).HasDatabaseName("ix_subtitle_assets_asset_id");
+
+        var work = modelBuilder.Entity<SubtitleSyncWork>();
+        work.ToTable("subtitle_sync_work");
+        work.HasKey(x => x.SubtitleAssetId);
+        // The worker takes the oldest unclaimed row first.
+        work.HasIndex(x => x.RequestedAt).HasDatabaseName("ix_subtitle_sync_work_requested_at");
+
+        var decision = modelBuilder.Entity<SubtitleSyncDecision>();
+        decision.ToTable("subtitle_sync_decisions");
+        decision.HasKey(x => x.Id);
+        decision.Property(x => x.Outcome).HasConversion<string>().HasMaxLength(20);
+        decision.Property(x => x.Reason).HasMaxLength(SubtitleSyncDecision.ReasonMaxLength);
+        // The latest decision per subtitle is the current answer: read by subtitle, newest first.
+        decision.HasIndex(x => new { x.SubtitleAssetId, x.CreatedAt })
+            .HasDatabaseName("ix_subtitle_sync_decisions_subtitle_created");
     }
 }

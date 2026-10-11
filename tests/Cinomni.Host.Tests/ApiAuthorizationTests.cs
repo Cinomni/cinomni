@@ -171,6 +171,21 @@ public sealed class ApiAuthorizationTests
     }
 
     [Fact]
+    public void Subtitle_resync_and_revert_are_mapped_and_operator_only()
+    {
+        // Both change which file every viewer of the title is served, and a re-sync spends minutes of
+        // FFmpeg: timing is the administrator's call. Viewers see the outcome on the subtitle list.
+        var routes = Surface().ToDictionary(route => route.Key, StringComparer.Ordinal);
+
+        foreach (var key in new[] { "POST /api/subtitles/obtained/{id}/resync", "POST /api/subtitles/obtained/{id}/revert" })
+        {
+            Assert.True(routes.TryGetValue(key, out var route), $"{key} is not mapped");
+            Assert.True(route.RequiresAdministrator, $"{key} is open to any authenticated account");
+            Assert.DoesNotContain(key, UserFacing);
+        }
+    }
+
+    [Fact]
     public void No_user_facing_route_is_locked_behind_the_administrator_policy()
     {
         var overGated = Surface()

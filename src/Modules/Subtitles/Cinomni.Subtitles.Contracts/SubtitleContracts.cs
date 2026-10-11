@@ -21,7 +21,9 @@ public readonly record struct SubtitleAssetId(Guid Value)
 /// <summary>
 /// The lifecycle of a subtitle search. It is requested, searches providers, scores
 /// the candidates, downloads the best over the threshold and lands it — or finds nothing and waits for
-/// an adaptive re-search. Sync (ffsubsync) and upgrades come with a later slice.
+/// an adaptive re-search. A landed SubRip or WebVTT file then passes through <see cref="SubtitleSearchState.Syncing"/>,
+/// where its timing is checked against the video's audio; the subtitle is playable throughout, and the
+/// step ends in <see cref="SubtitleSearchState.Available"/> whatever it decides. Upgrades come with a later slice.
 /// </summary>
 public enum SubtitleSearchState
 {
@@ -50,7 +52,8 @@ public sealed record SubtitleSearchSummary(
     bool Forced,
     bool HearingImpaired,
     SubtitleSearchState State,
-    int Attempts);
+    int Attempts,
+    Guid? SubtitleId = null);
 
 /// <summary>Projection of one scored candidate found for a search.</summary>
 public sealed record SubtitleCandidateSummary(
@@ -58,6 +61,46 @@ public sealed record SubtitleCandidateSummary(
     string Release,
     int Score,
     bool HearingImpaired);
+
+/// <summary>
+/// What a synchronization pass decided about a subtitle's timing. Only <see cref="Applied"/> changes
+/// which file is played; every other outcome keeps the file as it was downloaded, and says why.
+/// </summary>
+public enum SubtitleSyncOutcome
+{
+    /// <summary>A shifted copy was written and is now the file played.</summary>
+    Applied = 1,
+
+    /// <summary>The best match was within a tenth of a second at the same speed: nothing to change.</summary>
+    AlreadyInSync = 2,
+
+    /// <summary>A match was found but not clearly enough to trust it; the original is kept.</summary>
+    LowConfidence = 3,
+
+    /// <summary>This subtitle or video cannot be synchronized (format, forced track, no audio, switched off).</summary>
+    Unsupported = 4,
+
+    /// <summary>The analysis could not run (FFmpeg missing, timeout, unreadable file); the original is kept.</summary>
+    Failed = 5,
+
+    /// <summary>An administrator put the original file back.</summary>
+    Reverted = 6,
+}
+
+/// <summary>
+/// The latest synchronization decision for an obtained subtitle. <see cref="OffsetMs"/> and
+/// <see cref="Ratio"/> describe the best match the analysis found, applied or not:
+/// a cue at <c>t</c> in the original plays at <c>t × Ratio + OffsetMs</c>. <see cref="HasOriginal"/>
+/// says the file played is a synchronized copy, so the original can be put back.
+/// </summary>
+public sealed record SubtitleSyncSummary(
+    SubtitleSyncOutcome Outcome,
+    int OffsetMs,
+    double Ratio,
+    double Score,
+    string Reason,
+    bool HasOriginal,
+    DateTimeOffset DecidedAt);
 
 /// <summary>Projection of an obtained subtitle: the file that landed and its language flags.</summary>
 public sealed record SubtitleAssetSummary(
@@ -69,7 +112,8 @@ public sealed record SubtitleAssetSummary(
     SubtitleFormat Format,
     string Path,
     string Provider,
-    int Score);
+    int Score,
+    SubtitleSyncSummary? Sync = null);
 
 /// <summary>The full view of a search: its state, its candidates, and the subtitle it landed (if any).</summary>
 public sealed record SubtitleSearchDetail(

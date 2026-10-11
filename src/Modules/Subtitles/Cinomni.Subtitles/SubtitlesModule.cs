@@ -12,6 +12,7 @@ using Cinomni.Subtitles.Files;
 using Cinomni.Subtitles.Messaging;
 using Cinomni.Subtitles.Persistence;
 using Cinomni.Subtitles.Providers;
+using Cinomni.Subtitles.Sync;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -77,6 +78,12 @@ public static class SubtitlesModule
         // The viewer-scoped twin the endpoints bind; it consults Catalog's content access (→i).
         services.AddScoped<SubtitleBrowse>();
 
+        // Synchronization: the pass, the queue it drains and the administrator's re-sync and revert. The
+        // worker that drives the queue and the FFmpeg speech source are adapters (AddSubtitleAdapters).
+        services.AddScoped<SubtitleSyncAnalyzer>();
+        services.AddScoped<SubtitleSyncProcessor>();
+        services.AddScoped<SubtitleSyncCommands>();
+
         services.AddScoped<ICommandHandler<SearchSubtitlesCommand>, SearchSubtitlesCommandHandler>();
         services.AddScoped<ICommandHandler<RelocateSubtitlesCommand>, RelocateSubtitlesCommandHandler>();
         services.AddScoped<ICommandHandler<CatchUpSubtitlesCommand>, CatchUpSubtitlesCommandHandler>();
@@ -95,16 +102,29 @@ public static class SubtitlesModule
 
     /// <summary>
     /// Registers the production OpenSubtitles provider (over an SSRF-hardened client) and the local
-    /// file store, plus the subtitle profile options. Tests skip this and register their own
+    /// file store, the subtitle profile options, and synchronization: its options, the FFmpeg speech
+    /// source and the worker that drains the sync queue. Tests skip this and register their own
     /// <see cref="ISubtitleProvider"/>/<see cref="ISubtitleFileStore"/> fakes plus a
-    /// <see cref="SubtitleOptions"/>.
+    /// <see cref="SubtitleOptions"/> (and, to exercise synchronization, a <see cref="SubtitleSyncOptions"/>
+    /// and an <see cref="ISpeechActivitySource"/>).
     /// </summary>
     public static IServiceCollection AddSubtitleAdapters(
         this IServiceCollection services,
         Action<SubtitleOptions>? configureProfile = null,
         Action<SubtitleProviderOptions>? configureProvider = null,
-        Action<SubdlProviderOptions>? configureSubdl = null)
+        Action<SubdlProviderOptions>? configureSubdl = null,
+        Action<SubtitleSyncOptions>? configureSync = null)
     {
+        var syncOptions = new SubtitleSyncOptions();
+        configureSync?.Invoke(syncOptions);
+        syncOptions.Normalize();
+        services.AddSingleton(syncOptions);
+        services.AddSingleton<ISpeechActivitySource, FfmpegSpeechActivitySource>();
+
+        // This module's own worker, not the shared command queue: a pass decodes minutes of audio and
+        // would hold every other module's commands behind it. A test host drives the processor itself.
+        services.AddHostedService<SubtitleSyncWorker>();
+
         var profile = new SubtitleOptions();
         configureProfile?.Invoke(profile);
         services.AddSingleton(profile);

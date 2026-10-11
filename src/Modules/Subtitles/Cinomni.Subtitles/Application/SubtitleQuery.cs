@@ -39,9 +39,8 @@ public sealed class SubtitleQuery(SubtitlesDbContext dbContext) : ISubtitleQuery
             var entity = await dbContext.Assets.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
             if (entity is not null)
             {
-                asset = new SubtitleAssetSummary(
-                    new SubtitleAssetId(entity.Id), entity.AssetId, entity.Language, entity.Forced,
-                    entity.HearingImpaired, entity.Format, entity.Path, entity.Provider, entity.Score);
+                var decisions = await LatestDecisionsAsync([entity.Id], cancellationToken);
+                asset = ToSummary(entity, decisions.GetValueOrDefault(entity.Id));
             }
         }
 
@@ -55,12 +54,44 @@ public sealed class SubtitleQuery(SubtitlesDbContext dbContext) : ISubtitleQuery
             .Where(a => a.AssetId == assetId)
             .OrderBy(a => a.CreatedAt)
             .ToListAsync(cancellationToken);
-        return assets
-            .Select(a => new SubtitleAssetSummary(
-                new SubtitleAssetId(a.Id), a.AssetId, a.Language, a.Forced, a.HearingImpaired, a.Format, a.Path,
-                a.Provider, a.Score))
-            .ToList();
+        var decisions = await LatestDecisionsAsync(assets.Select(a => a.Id).ToList(), cancellationToken);
+        return assets.Select(a => ToSummary(a, decisions.GetValueOrDefault(a.Id))).ToList();
     }
+
+    /// <summary>The newest decision per subtitle: the history is append-only, so the last row is the answer.</summary>
+    private async Task<Dictionary<Guid, SubtitleSyncDecision>> LatestDecisionsAsync(
+        IReadOnlyList<Guid> subtitleIds, CancellationToken cancellationToken)
+    {
+        if (subtitleIds.Count == 0)
+        {
+            return [];
+        }
+
+        var decisions = await dbContext.SyncDecisions
+            .AsNoTracking()
+            .Where(d => subtitleIds.Contains(d.SubtitleAssetId))
+            .ToListAsync(cancellationToken);
+
+        // Ids are UUIDv7, so within one timestamp the later row still sorts last.
+        return decisions
+            .GroupBy(d => d.SubtitleAssetId)
+            .ToDictionary(group => group.Key, group => group.OrderBy(d => d.CreatedAt).ThenBy(d => d.Id).Last());
+    }
+
+    private static SubtitleAssetSummary ToSummary(SubtitleAsset asset, SubtitleSyncDecision? decision) => new(
+        new SubtitleAssetId(asset.Id),
+        asset.AssetId,
+        asset.Language,
+        asset.Forced,
+        asset.HearingImpaired,
+        asset.Format,
+        asset.Path,
+        asset.Provider,
+        asset.Score,
+        decision is null
+            ? null
+            : new SubtitleSyncSummary(
+                decision.Outcome, decision.OffsetMs, decision.Ratio, decision.Score, decision.Reason, asset.IsSynced, decision.CreatedAt));
 
     private static SubtitleSearchSummary ToSummary(SubtitleSearch search) => new(
         new SubtitleSearchId(search.Id),
@@ -69,5 +100,6 @@ public sealed class SubtitleQuery(SubtitlesDbContext dbContext) : ISubtitleQuery
         search.Forced,
         search.HearingImpaired,
         search.State,
-        search.Attempts);
+        search.Attempts,
+        search.SubtitleAssetId);
 }

@@ -5,6 +5,7 @@ using Cinomni.Playback.Application;
 using Cinomni.Playback.Encoding;
 using Cinomni.Subtitles.Application;
 using Cinomni.Subtitles.Providers;
+using Cinomni.Subtitles.Sync;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -354,6 +355,40 @@ public sealed class ModuleConfigurationTests
             services => services.AddConfiguredSubtitleAdapters(Configuration([])));
         Assert.Equal(string.Empty, unset.ApiKey);
         Assert.Equal("https://api.opensubtitles.com/api/v1/", unset.BaseAddress);
+    }
+
+    [Fact]
+    public void Subtitle_sync_runs_the_ffmpeg_playback_runs_unless_it_names_its_own()
+    {
+        // Arrange — Playback's binary is the only one configured.
+        var shared = Resolve<SubtitleSyncOptions>(services => services.AddConfiguredSubtitleAdapters(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Playback:Ffmpeg:BinaryPath"] = "/opt/jellyfin-ffmpeg/ffmpeg",
+                ["Subtitles:Sync:Enabled"] = "false",
+                ["Subtitles:Sync:Concurrency"] = "2",
+                ["Subtitles:Sync:MinScore"] = "0.4",
+            })));
+
+        // Act — and one where synchronization names its own, with values outside the designed range.
+        var own = Resolve<SubtitleSyncOptions>(services => services.AddConfiguredSubtitleAdapters(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Playback:Ffmpeg:BinaryPath"] = "/opt/jellyfin-ffmpeg/ffmpeg",
+                ["Subtitles:Sync:FfmpegBinaryPath"] = "/usr/bin/ffmpeg",
+                ["Subtitles:Sync:Concurrency"] = "64",
+                ["Subtitles:Sync:MinMargin"] = "0.5",
+            })));
+
+        // Assert
+        Assert.Equal("/opt/jellyfin-ffmpeg/ffmpeg", shared.FfmpegBinaryPath);
+        Assert.False(shared.Enabled);
+        Assert.Equal(2, shared.Concurrency);
+        Assert.Equal(0.4, shared.MinScore);
+        Assert.Equal("/usr/bin/ffmpeg", own.FfmpegBinaryPath);
+        Assert.True(own.Enabled);
+        Assert.Equal(SubtitleSyncOptions.MaxConcurrency, own.Concurrency);
+        Assert.Equal(1, own.MinMargin);
     }
 
     private static IConfiguration Configuration(Dictionary<string, string?> values) =>
