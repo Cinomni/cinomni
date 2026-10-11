@@ -163,6 +163,12 @@ export const identityApi = {
    */
   disableTwoFactor: (password: string, code: string) =>
     api.post<void>('/api/identity/two-factor/disable', { password, code }),
+  /**
+   * Changes this account's own password. Needs the current one, and signs out every other session
+   * the account holds; the one making the change stays signed in.
+   */
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post<void>('/api/identity/password', { currentPassword, newPassword }),
 }
 
 // --- Catalog ------------------------------------------------------------------------------------

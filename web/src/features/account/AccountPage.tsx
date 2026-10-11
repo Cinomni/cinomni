@@ -2,6 +2,7 @@ import { useAuth } from '@/auth/useAuth'
 import { PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/ui/Badge'
 import { Card } from '@/ui/Card'
+import { PasswordSection } from './PasswordSection'
 import { TwoFactorSection } from './TwoFactorSection'
 
 /**
@@ -9,7 +10,7 @@ import { TwoFactorSection } from './TwoFactorSection'
  * about everyone's. The console's Users page is the second thing and refuses a member outright; this
  * is the first, so every account reaches it.
  *
- * Today that is the second factor and nothing else. Role and permissions are shown but not offered:
+ * Today that is the password and the second factor. Role and permissions are shown but not offered:
  * an account granting itself a capability is exactly what the administrator policy exists to stop,
  * and rendering a control the API would refuse would be inviting the refusal.
  */
@@ -86,6 +87,8 @@ export function AccountPage() {
           <h2 className="font-medium text-fg">What you can watch</h2>
           <p className="text-sm text-muted">{ceilingSentence(user?.permissions)}</p>
         </Card>
+
+        <PasswordSection />
 
         <TwoFactorSection enabled={user?.twoFactorEnabled ?? false} onChanged={refreshUser} />
       </div>

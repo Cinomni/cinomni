@@ -40,6 +40,7 @@ public static class IdentityModule
 
         services.AddIntegrationEvent<UserCreated>(IdentityEventNames.UserCreated);
         services.AddIntegrationEvent<UserAuthenticated>(IdentityEventNames.UserAuthenticated);
+        services.AddIntegrationEvent<PasswordChanged>(IdentityEventNames.PasswordChanged);
 
         var retention = new SessionRetentionOptions();
         configureRetention?.Invoke(retention);
@@ -64,6 +65,7 @@ public static class IdentityModule
         // the clock, and a test that cannot move the clock cannot exercise expiry at all.
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<ITwoFactorService, TwoFactorService>();
+        services.AddScoped<IPasswordChangeService, PasswordChangeService>();
 
         return services;
     }

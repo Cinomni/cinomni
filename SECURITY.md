@@ -160,11 +160,20 @@ traversal**, **command/argument injection** into external processes, **XXE** in 
   as the only way to start another. Each attempt is spent by one conditional update *before* its code
   is checked, so parallel requests cannot share an attempt and slip past the cap.
   Enrolling, confirming and turning the factor off are throttled **per account** (ten requests a
-  quarter hour across the three), because a stolen session can arrive from any address and each of
+  quarter hour across these three and the password change below), because a stolen session can arrive from any address and each of
   them either verifies the password again or accepts a six-digit code. Turning the factor off needs
   the password *and* a current code, so a stolen session cannot simply remove the protection over the
   account it belongs to, and it revokes every other session: the account is less protected
   afterwards, so anything left open elsewhere now matters more than it did.
+- **An account changes its own password only by presenting the current one**, on top of its session,
+  so a borrowed session cannot lock the owner out. The current password is checked before anything is
+  said about the new one: a wrong one answers `identity.invalid_credentials` whatever the new password
+  is, so the policy cannot be probed without it. The new password follows the same rules as every other
+  path that sets one, is hashed before the transaction opens, and the change **revokes every other
+  session** and spends any sign-in still waiting for its second-factor code, because both were earned
+  with a credential that no longer exists. The route shares the per-account throttle with the
+  second-factor routes, and the change publishes `identity.password-changed`, which carries no
+  credential material.
 - **There is a documented way back in** when an authenticator and every recovery code are gone: see
   *If you are locked out of an account* in [DEPLOYMENT.md](./DEPLOYMENT.md). It needs database access,
   which is already total control of the installation, so it grants nothing that access did not.

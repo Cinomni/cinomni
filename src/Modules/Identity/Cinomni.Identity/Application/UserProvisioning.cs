@@ -363,21 +363,9 @@ public sealed class UserProvisioning(
                 $"Username must not be empty and must be at most {CredentialLimits.MaximumUsernameLength} characters."));
         }
 
-        if (password.Length < CredentialLimits.MinimumPasswordLength)
-        {
-            return Result<string>.Failure(new Error(
-                "identity.weak_password",
-                $"Password must be at least {CredentialLimits.MinimumPasswordLength} characters."));
-        }
-
-        if (password.Length > CredentialLimits.MaximumPasswordLength)
-        {
-            return Result<string>.Failure(new Error(
-                "identity.password_too_long",
-                $"Password must be at most {CredentialLimits.MaximumPasswordLength} characters."));
-        }
-
-        return Result<string>.Success(normalized);
+        return CredentialLimits.RefusePassword(password) is { } refused
+            ? Result<string>.Failure(refused)
+            : Result<string>.Success(normalized);
     }
 
     private async Task<Result<UserId>> PersistAsync(
