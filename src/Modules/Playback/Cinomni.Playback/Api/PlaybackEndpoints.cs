@@ -356,6 +356,11 @@ public static class PlaybackEndpoints
             method = detail.Session.Method.ToString(),
             positionTicks = detail.Session.PositionTicks,
             endReason = detail.Session.EndReason?.ToString(),
+            // What the player shows when the stream stopped, worded for the viewer; null when the session
+            // did not fail or the failure has nothing useful to say.
+            failure = detail.Session.Failure is { } failure
+                ? new { code = failure.Code, message = failure.Message }
+                : null,
         },
         selection = new { audio = detail.Selection.AudioStreamIndex, subtitle = detail.Selection.SubtitleStreamIndex },
         plan = ToPlanDto(detail.Plan),
