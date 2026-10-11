@@ -91,15 +91,29 @@ traversal**, **command/argument injection** into external processes, **XXE** in 
   a stream index and two numbers the module formats itself; the only output is raw 8 kHz PCM on stdout,
   read up to the size of the stretch asked for (about 4 minutes) and no further. Each run has a timeout
   (`Subtitles:Sync:WindowTimeout`) and a concurrency bound, the process tree is killed past either,
-  stderr is drained and dropped, and a missing or failing FFmpeg is a recorded outcome that keeps the
-  original subtitle, never an error that blocks it.
+  and stderr is read through a small buffer and thrown away as it arrives — never accumulated, since a
+  hostile file can make FFmpeg write it as fast as it decodes (the Playback subtitle converter now does
+  the same). A missing or failing FFmpeg is a recorded outcome that keeps the original subtitle, never
+  an error that blocks it. The binary is `Subtitles:Sync:FfmpegBinaryPath` (falling back to
+  `Playback:Ffmpeg:BinaryPath`), read from configuration at startup; it is not a live setting, so the
+  settings API cannot point it at another program.
 - The subtitle file a pass re-times is a provider's download, so it is parsed as hostile: read only
-  through the file store (8 MiB cap, a file that is a symbolic link is refused), decoded by byte-order mark, strict UTF-8 or
-  Windows-1252, and matched line by line against a strict timing pattern with a regex timeout. More
-  than 20,000 cues refuses the file; a timestamp past 48 hours, minutes or seconds past 59, or an
-  inverted cue is ignored. The rewrite changes only the timing lines, clamps a cue moved before zero
-  to zero, never writes to the original, and writes the copy to a fixed `.synced` name in the original's own
-  directory, confined there, through a temporary file and an atomic rename.
+  through the file store (one handle for the size check and the read, never more than 8 MiB read
+  through it; a file that is itself a symbolic link is refused — the check covers the file, not the
+  directories above it), decoded by byte-order mark, strict UTF-8 or Windows-1252, and matched line by
+  line against a strict timing pattern of ASCII digits with a regex timeout. More than 200,000 lines is
+  refused before the text is split, and more than 20,000 cues refuses the file; a timing line with a
+  timestamp past 48 hours or minutes or seconds past 59 is left as it was, and an inverted cue is left
+  out of the analysis. The rewrite changes only the timing lines, clamps a cue moved before zero to
+  zero, and never writes to the original.
+- A synchronized copy is written beside the original under a name no file has yet
+  (`<name>.<lang>.synced-<12 hex>.<ext>`), through a temporary file and a rename that refuses to replace
+  anything, so it can never overwrite the copy being played or a file the household keeps under a
+  `.synced` name of its own. Only a file named exactly that way, and sitting beside the subtitle's
+  original, is ever removed by this module. Every change to which file a subtitle plays — a pass
+  recording its verdict, Import's relocation, a revert, a re-sync — locks the subtitle's row first, and
+  a pass re-checks under that lock that the original is still where it analyzed it, so a video moved
+  mid-pass can never leave the row pointing at a copy that was not moved with it.
 - The libtorrent sidecar is a separate process; in production it is intended to run inside a VPN
   network namespace with no published ports.
 - The opt-in qBittorrent engine is somebody else's process: Cinomni cannot see or enforce its network
