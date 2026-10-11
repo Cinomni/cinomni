@@ -335,6 +335,10 @@ export const libraryApi = {
 // --- Subtitles ----------------------------------------------------------------------------------
 export const subtitlesApi = {
   forAsset: (assetId: string) => api.get<SubtitleSearchSummary[]>(`/api/subtitles/assets/${assetId}`),
+  /** Administrator: check an obtained subtitle's timing again, from the downloaded file. */
+  resync: (subtitleId: string) => api.post<void>(`/api/subtitles/obtained/${subtitleId}/resync`),
+  /** Administrator: play the downloaded file again instead of the synchronized copy. */
+  revert: (subtitleId: string) => api.post<void>(`/api/subtitles/obtained/${subtitleId}/revert`),
 }
 
 // --- Playback -----------------------------------------------------------------------------------

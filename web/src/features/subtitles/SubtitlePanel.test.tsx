@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { subtitlesApi } from '@/api/endpoints'
-import type { SubtitleSearchSummary } from '@/api/types'
+import type { SubtitleSearchSummary, SubtitleSync } from '@/api/types'
 import { renderWithProviders } from '@/test/render'
 import { SubtitlePanel } from './SubtitlePanel'
 
 vi.mock('@/api/endpoints', () => ({
-  subtitlesApi: { forAsset: vi.fn() },
+  subtitlesApi: { forAsset: vi.fn(), resync: vi.fn(), revert: vi.fn() },
 }))
 
 function aSearch(overrides: Partial<SubtitleSearchSummary> = {}): SubtitleSearchSummary {
@@ -18,12 +19,32 @@ function aSearch(overrides: Partial<SubtitleSearchSummary> = {}): SubtitleSearch
     hearingImpaired: false,
     state: 'Available',
     attempts: 1,
+    subtitle: null,
     ...overrides,
   }
 }
 
+function aSync(overrides: Partial<SubtitleSync> = {}): SubtitleSync {
+  return {
+    outcome: 'Applied',
+    offsetMs: 1240,
+    ratio: 1,
+    score: 0.61,
+    reason: 'Shifted by +1.24 s.',
+    hasOriginal: true,
+    decidedAt: '2026-10-11T10:00:00Z',
+    ...overrides,
+  }
+}
+
+function aSyncedSearch(sync: Partial<SubtitleSync> = {}, search: Partial<SubtitleSearchSummary> = {}) {
+  return aSearch({ subtitle: { id: 'subtitle-1', format: 'Srt', sync: aSync(sync) }, ...search })
+}
+
 beforeEach(() => {
   vi.mocked(subtitlesApi.forAsset).mockReset()
+  vi.mocked(subtitlesApi.resync).mockReset()
+  vi.mocked(subtitlesApi.revert).mockReset()
 })
 
 describe('SubtitlePanel', () => {
@@ -84,5 +105,97 @@ describe('SubtitlePanel', () => {
     // Assert
     expect(await screen.findByText('Subtitle status could not be loaded')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('SubtitlePanel_names_an_applied_shift_with_its_offset_and_frame_rate_conversion', async () => {
+    // Arrange
+    vi.mocked(subtitlesApi.forAsset).mockResolvedValue([
+      aSyncedSearch({ ratio: (25 * 1001) / 24000, reason: 'Shifted by +1.24 s and retimed from 25 to 23.976 fps.' }),
+    ])
+
+    // Act
+    renderWithProviders(<SubtitlePanel assetId="asset-1" />)
+
+    // Assert — the table and the timing list both name it, and the backend's reason is quoted.
+    expect(await screen.findAllByText('Synced +1.24 s (25→23.976)')).toHaveLength(2)
+    expect(screen.getByText('Shifted by +1.24 s and retimed from 25 to 23.976 fps.')).toBeInTheDocument()
+  })
+
+  it('SubtitlePanel_says_the_original_was_kept_when_the_match_was_not_convincing', async () => {
+    vi.mocked(subtitlesApi.forAsset).mockResolvedValue([
+      aSyncedSearch({ outcome: 'LowConfidence', hasOriginal: false, reason: 'Low confidence: the best match scores 0.12.' }),
+    ])
+
+    renderWithProviders(<SubtitlePanel assetId="asset-1" />)
+
+    expect(await screen.findAllByText('Original kept: low confidence')).toHaveLength(2)
+    expect(screen.getByText('Low confidence: the best match scores 0.12.')).toBeInTheDocument()
+  })
+
+  it('SubtitlePanel_offers_no_timing_actions_to_a_member', async () => {
+    vi.mocked(subtitlesApi.forAsset).mockResolvedValue([aSyncedSearch()])
+
+    renderWithProviders(<SubtitlePanel assetId="asset-1" />)
+
+    await screen.findAllByText('Synced +1.24 s')
+    expect(screen.queryByRole('button', { name: /re-sync/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /revert/i })).not.toBeInTheDocument()
+  })
+
+  it('SubtitlePanel_reverts_only_after_the_administrator_confirms_and_then_reloads', async () => {
+    // Arrange
+    const user = userEvent.setup()
+    vi.mocked(subtitlesApi.forAsset).mockResolvedValue([aSyncedSearch()])
+    vi.mocked(subtitlesApi.revert).mockResolvedValue(undefined)
+    renderWithProviders(<SubtitlePanel assetId="asset-1" canManage />)
+
+    // Act — the first click only asks.
+    await user.click(await screen.findByRole('button', { name: 'Revert en subtitle to the downloaded file' }))
+
+    // Assert
+    expect(subtitlesApi.revert).not.toHaveBeenCalled()
+    expect(screen.getByText('Play the downloaded file again?')).toBeInTheDocument()
+
+    // Act — confirming does it, for this subtitle, and the list is fetched again.
+    await user.click(screen.getByRole('button', { name: 'Confirm revert' }))
+
+    // Assert
+    expect(subtitlesApi.revert).toHaveBeenCalledWith('subtitle-1')
+    await vi.waitFor(() => expect(subtitlesApi.forAsset).toHaveBeenCalledTimes(2))
+  })
+
+  it('SubtitlePanel_resyncs_on_request_and_cannot_while_a_check_is_running', async () => {
+    // Arrange
+    const user = userEvent.setup()
+    vi.mocked(subtitlesApi.forAsset).mockResolvedValue([
+      aSyncedSearch({}, { id: 'search-a' }),
+      aSearch({
+        id: 'search-b',
+        language: 'es',
+        state: 'Syncing',
+        subtitle: { id: 'subtitle-2', format: 'Srt', sync: null },
+      }),
+    ])
+    vi.mocked(subtitlesApi.resync).mockResolvedValue(undefined)
+    renderWithProviders(<SubtitlePanel assetId="asset-1" canManage />)
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: 'Re-sync en subtitle' }))
+
+    // Assert
+    expect(subtitlesApi.resync).toHaveBeenCalledWith('subtitle-1')
+    expect(screen.getByRole('button', { name: 'Re-sync es subtitle' })).toBeDisabled()
+    expect(screen.getAllByText('Checking timing…')).toHaveLength(2)
+  })
+
+  it('SubtitlePanel_shows_why_an_action_was_refused', async () => {
+    const user = userEvent.setup()
+    vi.mocked(subtitlesApi.forAsset).mockResolvedValue([aSyncedSearch()])
+    vi.mocked(subtitlesApi.resync).mockRejectedValue(new Error('Subtitle synchronization is turned off.'))
+    renderWithProviders(<SubtitlePanel assetId="asset-1" canManage />)
+
+    await user.click(await screen.findByRole('button', { name: 'Re-sync en subtitle' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Subtitle synchronization is turned off.')
   })
 })
