@@ -193,6 +193,10 @@ public sealed class CollectionRuleHttpTests
         builder.Services.AddCatalogModule();
         builder.Services.Configure<JsonOptions>(options =>
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+        // This host is started, so its hosted services would run. Saving rules commits a queued sweep and
+        // then sweeps inline to count what moved; the command worker could take the queued sweep first,
+        // and the save then answered that nothing moved because the worker had already moved it.
+        builder.Services.WithoutMessageWorkers();
 
         var app = builder.Build();
         await using (var scope = app.Services.CreateAsyncScope())
