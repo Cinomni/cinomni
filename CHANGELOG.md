@@ -20,7 +20,7 @@ under the rules in *Versioning* below.
   four-minute stretches at the start, middle and end of the video, works out how far the subtitle
   is ahead or behind (up to a minute either way), and also detects a subtitle made for a 25 fps
   release playing on a 23.976 fps one, or the reverse. When the start, middle and end agree and the
-  match is clear, it writes a corrected copy beside the original (`<name>.<lang>.synced.srt`) and
+  match is clear, it writes a corrected copy beside the original (`<name>.<lang>.synced-<code>.srt`) and
   plays that. Otherwise it keeps the original and says why. The downloaded file is never changed.
   On a title's page, under **Subtitles**, each subtitle shows the result ("Synced +1.24 s",
   "Original kept: low confidence", and so on) with the reason. Administrators can **Re-sync** or
