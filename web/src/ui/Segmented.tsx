@@ -56,7 +56,12 @@ export function Segmented({ label, options, value, onChange, className }: Segmen
             )}
           >
             {option.label}
-            {option.count !== undefined && <span className="tabular-nums opacity-60">{option.count}</span>}
+            {option.count !== undefined && (
+              <>
+                {' '}
+                <span className="tabular-nums opacity-60">{option.count}</span>
+              </>
+            )}
           </button>
         )
       })}
