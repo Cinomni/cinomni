@@ -296,6 +296,8 @@ internal static class ModuleConfiguration
     /// Registers the production subtitle provider and file store with the configured profile. The
     /// provider key comes from configuration (environment or secret manager) and is never committed; an
     /// empty key leaves the provider registered but unusable, which is how the module degrades.
+    /// Synchronization reads <c>Subtitles:Sync</c>; the module clamps every value it reads to the range
+    /// the analysis was designed for.
     /// </summary>
     public static IServiceCollection AddConfiguredSubtitleAdapters(
         this IServiceCollection services,
@@ -334,6 +336,21 @@ internal static class ModuleConfiguration
                 options.BaseAddress = Text(subdl, "BaseAddress") ?? options.BaseAddress;
                 options.UserAgent = Text(subdl, "UserAgent") ?? options.UserAgent;
                 options.Timeout = Duration(subdl, "Timeout", options.Timeout);
+            },
+            configureSync: options =>
+            {
+                var sync = section.GetSection("Sync");
+                options.Enabled = sync.GetValue("Enabled", options.Enabled);
+                options.Concurrency = Number(sync, "Concurrency", options.Concurrency);
+                // The FFmpeg Playback runs, unless synchronization names its own: one binary to install
+                // and keep patched, not two that drift apart. Subtitles is handed the path, never Playback.
+                options.FfmpegBinaryPath = Text(sync, "FfmpegBinaryPath")
+                    ?? Text(configuration.GetSection("Playback:Ffmpeg"), "BinaryPath")
+                    ?? options.FfmpegBinaryPath;
+                options.WindowTimeout = Duration(sync, "WindowTimeout", options.WindowTimeout);
+                options.StuckAfter = Duration(sync, "StuckAfter", options.StuckAfter);
+                options.MinScore = sync.GetValue("MinScore", options.MinScore);
+                options.MinMargin = sync.GetValue("MinMargin", options.MinMargin);
             });
     }
 

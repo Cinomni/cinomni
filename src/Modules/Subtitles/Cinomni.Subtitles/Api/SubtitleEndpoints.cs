@@ -1,9 +1,11 @@
 using System.Security.Claims;
+using Cinomni.Kernel.Results;
 using Cinomni.Kernel.Security;
 using Cinomni.Operations.Messaging;
 using Cinomni.Subtitles.Application;
 using Cinomni.Subtitles.Contracts;
 using Cinomni.Subtitles.Messaging;
+using Cinomni.Subtitles.Sync;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -12,7 +14,8 @@ namespace Cinomni.Subtitles.Api;
 
 /// <summary>
 /// HTTP surface of the Subtitles module: observe the subtitle searches for an asset and their
-/// outcomes. Searching is driven by <c>MediaAssetRegistered</c>, not by API (a manual search is a
+/// outcomes, and for an administrator, re-check a subtitle's timing or put the downloaded file back.
+/// Searching is driven by <c>MediaAssetRegistered</c>, not by API (a manual search is a
 /// later addition). Every read is scoped to what the caller may see (a search is visible when its asset's
 /// work is), and the file's on-disk location is infrastructure detail only an operator gets (as in Library).
 /// </summary>
@@ -43,8 +46,31 @@ public static class SubtitleEndpoints
             }
 
             var searches = await browse.ListForAssetAsync(viewer, assetId, cancellationToken);
-            return Results.Ok(searches.Select(ToSearchDto));
+            var obtained = (await browse.ListObtainedAsync(viewer, assetId, cancellationToken))
+                .ToDictionary(subtitle => subtitle.Id.Value);
+            return Results.Ok(searches.Select(search => ToSearchDto(
+                search, search.SubtitleId is { } id ? obtained.GetValueOrDefault(id) : null)));
         });
+
+        // Timing is the administrator's call: both change which file every viewer of the title is
+        // served, and a re-sync spends minutes of FFmpeg.
+        group.MapPost("/obtained/{id:guid}/resync", async (
+            Guid id,
+            SubtitleSyncCommands commands,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await commands.ResyncAsync(new SubtitleAssetId(id), cancellationToken);
+            return result.IsSuccess ? Results.Accepted() : FailureResult(result.Error);
+        }).RequireAuthorization(AuthorizationPolicies.Administrator);
+
+        group.MapPost("/obtained/{id:guid}/revert", async (
+            Guid id,
+            SubtitleSyncCommands commands,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await commands.RevertAsync(new SubtitleAssetId(id), cancellationToken);
+            return result.IsSuccess ? Results.NoContent() : FailureResult(result.Error);
+        }).RequireAuthorization(AuthorizationPolicies.Administrator);
 
         group.MapGet("/searches/{id:guid}", async (
             Guid id,
@@ -64,7 +90,15 @@ public static class SubtitleEndpoints
         return endpoints;
     }
 
-    private static object ToSearchDto(SubtitleSearchSummary search) => new
+    private static IResult FailureResult(Error error)
+    {
+        var status = error.Code == SubtitleSyncCommands.NotFound.Code
+            ? StatusCodes.Status404NotFound
+            : StatusCodes.Status409Conflict;
+        return Results.Json(new { error = error.Code, message = error.Message }, statusCode: status);
+    }
+
+    private static object ToSearchDto(SubtitleSearchSummary search, SubtitleAssetSummary? subtitle = null) => new
     {
         id = search.Id.ToString(),
         assetId = search.AssetId.ToString(),
@@ -73,6 +107,25 @@ public static class SubtitleEndpoints
         hearingImpaired = search.HearingImpaired,
         state = search.State.ToString(),
         attempts = search.Attempts,
+        // The subtitle this search landed, if any, and what synchronization made of it. No path: this
+        // list is for every viewer of the title.
+        subtitle = subtitle is null ? null : new
+        {
+            id = subtitle.Id.ToString(),
+            format = subtitle.Format.ToString(),
+            sync = ToSyncDto(subtitle.Sync),
+        },
+    };
+
+    private static object? ToSyncDto(SubtitleSyncSummary? sync) => sync is null ? null : new
+    {
+        outcome = sync.Outcome.ToString(),
+        offsetMs = sync.OffsetMs,
+        ratio = sync.Ratio,
+        score = Math.Round(sync.Score, 3),
+        reason = sync.Reason,
+        hasOriginal = sync.HasOriginal,
+        decidedAt = sync.DecidedAt,
     };
 
     private static object ToDetailDto(SubtitleSearchDetail detail, bool isAdministrator) => new
@@ -96,6 +149,7 @@ public static class SubtitleEndpoints
             path = isAdministrator ? detail.Asset.Path : null,
             provider = detail.Asset.Provider,
             score = detail.Asset.Score,
+            sync = ToSyncDto(detail.Asset.Sync),
         },
     };
 }

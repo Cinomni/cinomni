@@ -7,6 +7,7 @@ using Cinomni.Subtitles.Contracts;
 using Cinomni.Subtitles.Files;
 using Cinomni.Subtitles.Persistence;
 using Cinomni.Subtitles.Providers;
+using Cinomni.Subtitles.Sync;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -16,7 +17,8 @@ namespace Cinomni.Subtitles.Application;
 /// Drives the subtitle search for an asset. For each wanted language the asset is missing, it opens a
 /// search, queries the providers (out-of-process), scores the candidates, downloads the best one over
 /// the threshold, writes it next to the video, and registers it — persisting the search and its
-/// <c>SubtitleAvailable</c> event in one unit of work. Idempotent per (asset, language,
+/// <c>SubtitleAvailable</c> event in one unit of work (with the pending synchronization row, when the
+/// subtitle is to be synchronized). Idempotent per (asset, language,
 /// forced, hi): a redelivered trigger reuses the existing search.
 /// </summary>
 public sealed class SubtitleSearchService(
@@ -30,7 +32,8 @@ public sealed class SubtitleSearchService(
     SubtitleProviderThrottle throttle,
     SubtitleOptions options,
     ILogger<SubtitleSearchService> logger,
-    ILiveOptions<SubtitlePreference>? preference = null) : ISubtitleSearch
+    ILiveOptions<SubtitlePreference>? preference = null,
+    SubtitleSyncOptions? syncOptions = null) : ISubtitleSearch
 {
     private sealed record Scored(ISubtitleProvider Provider, ProviderCandidate Candidate);
 
@@ -168,9 +171,9 @@ public sealed class SubtitleSearchService(
             var subtitleAsset = SubtitleAsset.Create(
                 search.AssetId, search.Id, language, wanted.Forced, wanted.HearingImpaired,
                 download.Format, path, best.Provider.Name, best.Candidate.Score, now);
-            search.MarkAvailable(subtitleAsset.Id, now);
+            var landing = Land(search, subtitleAsset, now);
             events.Add(new SubtitleAvailable(subtitleAsset.Id, search.AssetId, language, wanted.Forced, wanted.HearingImpaired, path));
-            await PersistAsync(search, isNew, added, subtitleAsset, events, cancellationToken);
+            await PersistAsync(search, isNew, added, subtitleAsset, events, cancellationToken, landing);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException)
         {
@@ -257,13 +260,42 @@ public sealed class SubtitleSearchService(
         };
     }
 
+    /// <summary>
+    /// Lands a downloaded subtitle. With synchronization on, a SubRip or WebVTT file goes to
+    /// <see cref="SubtitleSearchState.Syncing"/> with a pending row for the sync worker; anything it does
+    /// not cover is recorded as unsupported and lands available at once, so the reason is on record
+    /// rather than implied by a missing row. With synchronization off (or not wired, as in a test host
+    /// without the adapters) it lands available as it always did. Either way the subtitle is playable
+    /// now: its row points at the file as downloaded.
+    /// </summary>
+    private Landing Land(SubtitleSearch search, SubtitleAsset subtitleAsset, DateTimeOffset now)
+    {
+        if (syncOptions is not { Enabled: true })
+        {
+            search.MarkAvailable(subtitleAsset.Id, now);
+            return new Landing(null, null);
+        }
+
+        if (SubtitleSyncAnalyzer.Unsupported(subtitleAsset.Format, subtitleAsset.Forced, syncOptions) is { } reason)
+        {
+            search.MarkAvailable(subtitleAsset.Id, now);
+            return new Landing(null, SubtitleSyncDecision.Unmeasured(subtitleAsset.Id, SubtitleSyncOutcome.Unsupported, reason, now));
+        }
+
+        search.BeginSync(subtitleAsset.Id, now);
+        return new Landing(SubtitleSyncWork.Create(subtitleAsset.Id, search.Id, now), null);
+    }
+
+    private sealed record Landing(SubtitleSyncWork? Work, SubtitleSyncDecision? Decision);
+
     private async Task PersistAsync(
         SubtitleSearch search,
         bool isNew,
         IReadOnlyList<SubtitleCandidate> addedCandidates,
         SubtitleAsset? subtitleAsset,
         IReadOnlyList<IDomainEvent> events,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        Landing? landing = null) =>
         await unitOfWork.ExecuteAsync(async token =>
         {
             if (isNew)
@@ -278,6 +310,18 @@ public sealed class SubtitleSearchService(
             if (subtitleAsset is not null)
             {
                 dbContext.Assets.Add(subtitleAsset);
+            }
+
+            // The pending sync row commits with the subtitle and its Syncing state, or not at all: a
+            // search can never be left synchronizing with nothing queued to finish it.
+            if (landing?.Work is { } work)
+            {
+                dbContext.SyncWork.Add(work);
+            }
+
+            if (landing?.Decision is { } decision)
+            {
+                dbContext.SyncDecisions.Add(decision);
             }
 
             await dbContext.SaveChangesAsync(token);

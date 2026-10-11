@@ -58,6 +58,12 @@ namespace Cinomni.Subtitles.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("language");
 
+                    b.Property<string>("OriginalPath")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("original_path");
+
                     b.Property<string>("Path")
                         .IsRequired()
                         .HasMaxLength(2048)
@@ -184,6 +190,90 @@ namespace Cinomni.Subtitles.Persistence.Migrations
                         .HasDatabaseName("ux_subtitle_searches_asset_language");
 
                     b.ToTable("subtitle_searches", "subtitles");
+                });
+
+            modelBuilder.Entity("Cinomni.Subtitles.Persistence.SubtitleSyncDecision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<double>("Margin")
+                        .HasColumnType("double precision")
+                        .HasColumnName("margin");
+
+                    b.Property<int>("OffsetMs")
+                        .HasColumnType("integer")
+                        .HasColumnName("offset_ms");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("outcome");
+
+                    b.Property<double>("Ratio")
+                        .HasColumnType("double precision")
+                        .HasColumnName("ratio");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<double>("Score")
+                        .HasColumnType("double precision")
+                        .HasColumnName("score");
+
+                    b.Property<Guid>("SubtitleAssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subtitle_asset_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_subtitle_sync_decisions");
+
+                    b.HasIndex("SubtitleAssetId", "CreatedAt")
+                        .HasDatabaseName("ix_subtitle_sync_decisions_subtitle_created");
+
+                    b.ToTable("subtitle_sync_decisions", "subtitles");
+                });
+
+            modelBuilder.Entity("Cinomni.Subtitles.Persistence.SubtitleSyncWork", b =>
+                {
+                    b.Property<Guid>("SubtitleAssetId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("subtitle_asset_id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset?>("ClaimedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("claimed_at");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("requested_at");
+
+                    b.Property<Guid>("SearchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("search_id");
+
+                    b.HasKey("SubtitleAssetId")
+                        .HasName("pk_subtitle_sync_work");
+
+                    b.HasIndex("RequestedAt")
+                        .HasDatabaseName("ix_subtitle_sync_work_requested_at");
+
+                    b.ToTable("subtitle_sync_work", "subtitles");
                 });
 
             modelBuilder.Entity("Cinomni.Subtitles.Persistence.SubtitleCandidate", b =>
