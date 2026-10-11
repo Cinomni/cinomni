@@ -89,6 +89,50 @@ public sealed class PlaybackHttpTests
 
             using var ended = JsonDocument.Parse(await client.GetStringAsync($"/api/playback/sessions/{sessionId}"));
             Assert.Equal("Stopped", ended.RootElement.GetProperty("session").GetProperty("endReason").GetString());
+            // A viewer stopping is not a failure: there is nothing to explain.
+            Assert.Equal(JsonValueKind.Null, ended.RootElement.GetProperty("session").GetProperty("failure").ValueKind);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The explanation the player shows when a stream stops travels over HTTP. Found on real hardware: the
+    /// query built it, but the endpoint's hand-written response left it out, and the viewer saw the
+    /// generic message.
+    /// </summary>
+    [Fact]
+    public async Task A_session_ended_for_being_too_slow_carries_its_explanation_over_http()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cinomni-playback-http", Guid.NewGuid().ToString("N"));
+        await using var app = await StartAsync($"{Database}_too_slow", root);
+        try
+        {
+            var client = await RequestsHttpTests.SignedInClientAsync(app);
+            var started = await client.PostAsJsonAsync("/api/playback/sessions", Transcoding(await RegisterAssetAsync(app)));
+            using var ticket = JsonDocument.Parse(await started.Content.ReadAsStringAsync());
+            var sessionId = Guid.Parse(ticket.RootElement.GetProperty("sessionId").GetString()!);
+
+            // What the sweep records when the conversion stays below real time.
+            await using (var scope = app.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlaybackDbContext>();
+                var session = await db.Sessions.Include(s => s.TranscodeJobs).SingleAsync(s => s.Id == sessionId);
+                Assert.NotNull(session.FailTooSlow("Converted at 0.80x real time.", DateTimeOffset.UtcNow));
+                await db.SaveChangesAsync();
+            }
+
+            using var failed = JsonDocument.Parse(await client.GetStringAsync($"/api/playback/sessions/{sessionId}"));
+            var failure = failed.RootElement.GetProperty("session").GetProperty("failure");
+            Assert.Equal("playback.too_slow", failure.GetProperty("code").GetString());
+            Assert.Contains("as fast as it plays", failure.GetProperty("message").GetString(), StringComparison.Ordinal);
+            // The job's own record — what FFmpeg managed — stays on the job, not in the viewer's words.
+            Assert.DoesNotContain("0.80", failure.GetProperty("message").GetString(), StringComparison.Ordinal);
         }
         finally
         {
