@@ -15,6 +15,20 @@ under the rules in *Versioning* below.
 - **Change your own password.** Your account → Password asks for the current password and the new one
   twice. Changing it signs out every other device signed in to that account; the one you used stays
   signed in. Until now only the database procedure in DEPLOYMENT.md could change a password.
+- **Downloaded subtitles are checked against the audio and re-timed when they are off.** A SubRip
+  or WebVTT subtitle is playable as soon as it lands; in the background, Cinomni then listens to
+  four-minute stretches at the start, middle and end of the video, works out how far the subtitle
+  is ahead or behind (up to a minute either way), and also detects a subtitle made for a 25 fps
+  release playing on a 23.976 fps one, or the reverse. When the start, middle and end agree and the
+  match is clear, it writes a corrected copy beside the original (`<name>.<lang>.synced.srt`) and
+  plays that. Otherwise it keeps the original and says why. The downloaded file is never changed.
+  On a title's page, under **Subtitles**, each subtitle shows the result ("Synced +1.24 s",
+  "Original kept: low confidence", and so on) with the reason. Administrators can **Re-sync** or
+  **Revert** to the downloaded file there. ASS subtitles and forced subtitles are not re-timed, and
+  subtitles you already have are not re-checked until you ask. It runs one subtitle at a time on its
+  own worker, so imports and downloads do not wait for it. It uses the FFmpeg configured for playback
+  (`Playback__Ffmpeg__BinaryPath`). If FFmpeg is missing or too slow, the subtitle stays as downloaded.
+  Set `Subtitles__Sync__Enabled=false` to turn it off.
 
 ### Changed
 
