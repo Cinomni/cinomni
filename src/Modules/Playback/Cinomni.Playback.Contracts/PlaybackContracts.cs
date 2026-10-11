@@ -77,6 +77,18 @@ public enum PlaybackEndReason
     /// ended it never got to record why.
     /// </summary>
     Recovered = 8,
+
+    /// <summary>
+    /// The transcode stayed slower than the video plays, so the player could only have buffered for ever.
+    /// The speed measured is on the transcode job.
+    /// </summary>
+    TooSlow = 9,
+
+    /// <summary>
+    /// The operating system killed FFmpeg (exit code 137), which inside a container almost always means
+    /// it ran out of the memory it was given.
+    /// </summary>
+    ResourceKilled = 10,
 }
 
 /// <summary>The lifecycle of an FFmpeg transcode job (isolated process; a failure never takes down the server).</summary>
@@ -251,7 +263,17 @@ public sealed record PlaybackTicket(
     long ResumePositionTicks,
     PlaybackMediaView? Media = null);
 
+/// <summary>
+/// Why a session that failed could not play, in words for the person who was watching, and what an
+/// administrator can change so the next attempt does. Built from the end reason and the plan, never from
+/// what FFmpeg wrote — that can quote paths and is for the transcode job, not the viewer.
+/// </summary>
+/// <param name="Code">A stable identifier a client can tell failures apart by (<c>playback.too_slow</c>, …).</param>
+/// <param name="Message">One or two sentences, already worded for the viewer.</param>
+public sealed record PlaybackFailureView(string Code, string Message);
+
 /// <summary>Projection of a playback session's current state.</summary>
+/// <param name="Failure">Set only when the session ended because it could not play; trailing optional.</param>
 public sealed record PlaybackSessionSummary(
     PlaybackSessionId Id,
     Guid UserId,
@@ -259,7 +281,8 @@ public sealed record PlaybackSessionSummary(
     PlaybackState State,
     PlaybackMethod Method,
     long PositionTicks,
-    PlaybackEndReason? EndReason = null);
+    PlaybackEndReason? EndReason = null,
+    PlaybackFailureView? Failure = null);
 
 /// <summary>The full view of a session: its state, its explainable plan, and its selected tracks.</summary>
 public sealed record PlaybackSessionDetail(

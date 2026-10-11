@@ -1074,6 +1074,7 @@ is clamped to it.
 | `playback.encoderPreset` (*Encoder speed*) | `Playback:Transcoding:Preset` | `fastest`, `fast`, `balanced`, `quality` | `fast` | Speed against compression, mapped onto each encoder's own words: x264/x265 `ultrafast`/`veryfast`/`fast`/`medium`, NVENC `p1`/`p3`/`p4`/`p6`, QSV `veryfast`/`faster`/`medium`/`slower`, AMF `speed`/`speed`/`balanced`/`quality`. VAAPI has no preset and ignores it. |
 | `playback.videoQuality` (*Video quality*) | `Playback:Transcoding:Quality` | `15`–`40` | `23` | Constant-quality target: CRF for x264/x265, CQ for NVENC, `global_quality` for QSV, QP for VAAPI and AMF. Lower looks better and costs more bandwidth. Used when nothing caps the bitrate; with a cap (this server's or the quality the viewer picked), the hardware encoders switch to a capped variable rate and x264/x265 keep the CRF under a `maxrate`. |
 | `playback.maxResolution` (*Maximum resolution*) | `Playback:Transcoding:MaxResolution` | `original`, `2160`, `1440`, `1080`, `720`, `480` | `original` | A server-wide ceiling on picture height. A file taller than it is **converted for every viewer**, even one whose device would play it directly. That is useful on a weak CPU or a slow uplink, expensive otherwise. Any other transcode is also scaled to fit under it. |
+| `playback.softwareMaxResolution` (*Software encoder maximum resolution*) | `Playback:Transcoding:SoftwareMaxResolution` | `original`, `2160`, `1440`, `1080`, `720` | `1080` | A ceiling on picture height that applies only when the CPU converts. A taller file is brought down to it, so the encoder spends nothing on pixels a stream that cannot keep up would never show. A hardware backend is not held to it. `original` lifts it. |
 | `playback.maxBitrateKbps` (*Maximum bitrate*) | `Playback:Transcoding:MaxBitrateKbps` | `0`–`200000` | `0` (no limit) | A file whose measured bitrate is above it is converted down for every viewer. A file whose bitrate the probe could not measure is not held against it. |
 | `playback.encoderThreads` (*Software encoder threads*) | `Playback:Transcoding:Threads` | `0`–`64` | `0` (FFmpeg decides) | Software encoders only. Lower it to leave CPU for the rest of the machine; it bounds the encoder, not a software decode. |
 | `playback.toneMapping` (*HDR tone mapping*) | `Playback:Transcoding:ToneMapping` | `true`, `false` | `true` | Brings an HDR source (HDR10, HDR10+, HLG, Dolby Vision) to SDR **when it is being transcoded anyway**. It never causes a transcode on its own. Needs `zscale` in the FFmpeg build; see "HDR and Dolby Vision". |
@@ -1284,6 +1285,14 @@ A transcode moves each frame one of two ways, and the choice decides what it cos
   needs more memory than the 2 GB default comfortably allows. For CPU-only 4K/HDR transcoding, raise
   both (`CINOMNI_CPUS` to 8–16 and `CINOMNI_MEMORY=6g`) or use a hardware backend, which takes the
   decode and the encode off the CPU and leaves it only the filtering.
+- **What happens when it does not keep up.** By default a software transcode is held to 1080 lines
+  (`playback.softwareMaxResolution`), which removes the cost of encoding 4K but not of decoding it — and
+  the decode alone is below real time at the default limits. So Cinomni measures every conversion from
+  the playlist it writes: one that stays below 0.9× real time for a whole minute, after a 30-second
+  warm-up, is ended, its transcode job records the speed, and the player tells the viewer the video
+  could not be converted fast enough and which of the settings above to change. A conversion the system
+  kills (exit code 137, almost always the memory limit) is reported the same way, naming
+  `CINOMNI_MEMORY`.
 
 ### Picture subtitles and HEVC output
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace Cinomni.Playback.Application;
@@ -28,6 +29,40 @@ internal static class HlsPlaylist
         }
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// How much of the video the playlist already lists, in seconds: the sum of its segment durations.
+    /// FFmpeg appends a segment only once it is written, so this is how far the encoder has got. A line
+    /// that does not read as a duration is skipped rather than trusted.
+    /// </summary>
+    public static double EncodedSeconds(string playlist)
+    {
+        const string Tag = "#EXTINF:";
+        var total = 0.0;
+        using var reader = new StringReader(playlist);
+        while (reader.ReadLine() is { } line)
+        {
+            if (!line.StartsWith(Tag, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var value = line.AsSpan(Tag.Length);
+            var comma = value.IndexOf(',');
+            if (comma >= 0)
+            {
+                value = value[..comma];
+            }
+
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
+                && double.IsFinite(seconds) && seconds > 0)
+            {
+                total += seconds;
+            }
+        }
+
+        return total;
     }
 
     private const string InitMap = "#EXT-X-MAP:URI=\"init.mp4\"";

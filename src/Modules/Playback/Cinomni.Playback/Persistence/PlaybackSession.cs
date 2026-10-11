@@ -276,7 +276,10 @@ public sealed class PlaybackSession
         var failed = changed.Where(job => job.State == TranscodeState.Failed).ToList();
         if (failed.Count > 0 && !IsTerminal)
         {
-            End(PlaybackState.Failed, PlaybackEndReason.TranscodeFailed, now);
+            End(
+                PlaybackState.Failed,
+                TranscodeJob.WasKilled(exitCode) ? PlaybackEndReason.ResourceKilled : PlaybackEndReason.TranscodeFailed,
+                now);
         }
         else
         {
@@ -292,7 +295,19 @@ public sealed class PlaybackSession
     /// that already ended is left as it is.
     /// </summary>
     /// <returns>The jobs failed just now, or <c>null</c> when the session had already ended.</returns>
-    public IReadOnlyList<TranscodeJob>? Interrupt(string reason, DateTimeOffset now)
+    public IReadOnlyList<TranscodeJob>? Interrupt(string reason, DateTimeOffset now) =>
+        FailTranscode(reason, PlaybackEndReason.ServerRestarted, now);
+
+    /// <summary>
+    /// Fails a session whose transcode was stopped because it could not serve the viewer — it ran slower
+    /// than the video plays — and records the measured speed on each job that was still producing output.
+    /// A session that already ended is left as it is.
+    /// </summary>
+    /// <returns>The jobs failed just now, or <c>null</c> when the session had already ended.</returns>
+    public IReadOnlyList<TranscodeJob>? FailTooSlow(string reason, DateTimeOffset now) =>
+        FailTranscode(reason, PlaybackEndReason.TooSlow, now);
+
+    private IReadOnlyList<TranscodeJob>? FailTranscode(string reason, PlaybackEndReason endReason, DateTimeOffset now)
     {
         if (IsTerminal)
         {
@@ -307,7 +322,7 @@ public sealed class PlaybackSession
             job.MarkFailed(reason);
         }
 
-        End(PlaybackState.Failed, PlaybackEndReason.ServerRestarted, now);
+        End(PlaybackState.Failed, endReason, now);
         return failed;
     }
 

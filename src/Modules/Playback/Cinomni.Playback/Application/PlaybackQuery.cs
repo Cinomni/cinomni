@@ -35,6 +35,7 @@ public sealed class PlaybackQuery(
     {
         var session = await dbContext.Sessions
             .AsNoTracking()
+            .Include(s => s.TranscodeJobs)
             .FirstOrDefaultAsync(s => s.Id == sessionId.Value && s.UserId == userId, cancellationToken);
         if (session is null)
         {
@@ -43,7 +44,7 @@ public sealed class PlaybackQuery(
 
         var summary = new PlaybackSessionSummary(
             new PlaybackSessionId(session.Id), session.UserId, session.AssetId, session.State, session.Method,
-            session.PositionTicks, session.EndReason);
+            session.PositionTicks, session.EndReason, PlaybackFailureExplainer.Explain(session));
         return new PlaybackSessionDetail(
             summary,
             session.Plan.ToView(),

@@ -104,9 +104,20 @@ public sealed class TranscodeJob
             return true;
         }
 
-        MarkFailed(Explain($"FFmpeg exited with code {exitCode}.", diagnostics));
+        MarkFailed(Explain(
+            WasKilled(exitCode)
+                ? $"FFmpeg was killed by the system (exit code {exitCode}), most likely because it ran out of memory."
+                : $"FFmpeg exited with code {exitCode}.",
+            diagnostics));
         return true;
     }
+
+    /// <summary>
+    /// Whether an exit code is a process killed by SIGKILL (128 + 9) — on Linux, and in a container above
+    /// all, what the kernel does to the process that pushed the cgroup past its memory limit. FFmpeg
+    /// never exits with it on its own.
+    /// </summary>
+    public static bool WasKilled(int exitCode) => exitCode == 137;
 
     /// <summary>
     /// The reason a failed job records: a summary that names no path, then as much of the end of
