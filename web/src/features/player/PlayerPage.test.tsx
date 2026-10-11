@@ -148,6 +148,45 @@ describe('PlayerPage', () => {
     expect(screen.queryByText('The sidecar could not be reached.')).not.toBeInTheDocument()
   })
 
+  it.each([
+    ['Transcode', 0],
+    ['DirectPlay', 60 * 10_000_000],
+  ] as const)(
+    'PlayerPage_reports_a_%s_stream_without_a_known_runtime_with_runtime_%d',
+    async (method, expectedDurationTicks) => {
+      // Arrange — no runtime from the server, and a stream the browser says lasts a minute. For a
+      // conversion that minute is only what exists so far; reported as the runtime, a viewer who caught
+      // up with a slow conversion was marked as having watched the whole film.
+      vi.mocked(playbackApi.start).mockResolvedValue(
+        aTicket({
+          method,
+          streamUrl: method === 'Transcode' ? '/api/playback/sessions/session-1/hls/manifest.m3u8' : '/api/playback/sessions/session-1/stream',
+        }),
+      )
+      renderWithProviders(<PlayerPage />)
+      const video = (await screen.findByLabelText('Video player')) as HTMLVideoElement
+      Object.defineProperty(video, 'duration', { configurable: true, value: 60 })
+      Object.defineProperty(video, 'currentTime', { configurable: true, value: 56 })
+      act(() => {
+        video.dispatchEvent(new Event('durationchange'))
+        video.dispatchEvent(new Event('timeupdate'))
+      })
+
+      // Act — a pause reports at once.
+      act(() => {
+        video.dispatchEvent(new Event('pause'))
+      })
+
+      // Assert — the position always goes; the runtime only when it is the file's.
+      await waitFor(() =>
+        expect(playbackApi.progress).toHaveBeenLastCalledWith(
+          'session-1',
+          expect.objectContaining({ positionTicks: 56 * 10_000_000, durationTicks: expectedDurationTicks }),
+        ),
+      )
+    },
+  )
+
   it('PlayerPage_names_the_audio_track_the_session_plays_by_its_language_when_the_ticket_lists_it', async () => {
     // Arrange — the session plays stream 2, and the ticket says what stream 2 is.
     vi.mocked(playbackApi.start).mockResolvedValue(

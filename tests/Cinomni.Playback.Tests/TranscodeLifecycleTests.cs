@@ -30,6 +30,9 @@ public sealed class TranscodeLifecycleTests : IAsyncLifetime, IDisposable
 
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(5);
 
+    /// <summary>The test film's runtime, in the ticks progress is reported in.</summary>
+    private const long RuntimeTicks = 1000;
+
     private readonly FakeMediaEncoder _encoder = new() { WritesOutput = true };
     private readonly ManualClock _clock = new(DateTimeOffset.UtcNow);
     private readonly FailureSink _failures = new();
@@ -684,7 +687,7 @@ public sealed class TranscodeLifecycleTests : IAsyncLifetime, IDisposable
     {
         await using var scope = _provider.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<IPlaybackSessionCommands>()
-            .ReportProgressAsync(Watcher(userId), sessionId, positionTicks, durationTicks: 1000, isPaused);
+            .ReportProgressAsync(Watcher(userId), sessionId, positionTicks, durationTicks: RuntimeTicks, isPaused);
     }
 
     private async Task SweepAsync()
@@ -726,11 +729,12 @@ public sealed class TranscodeLifecycleTests : IAsyncLifetime, IDisposable
         var session = PlaybackSession.Create(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), MoviePath, "matroska",
             new PlaybackPlan(PlaybackMethod.Transcode, [], [], EncoderBackend.Software, [], DecodeAccelerated: false),
-            audioStreamIndex: 1, subtitleStreamIndex: null, resumePositionTicks: 0, playSessionId: null, before);
+            audioStreamIndex: 1, subtitleStreamIndex: null, resumePositionTicks: 0, playSessionId: null, before,
+            RuntimeTicks);
         session.Begin(before);
         if (watched)
         {
-            session.ReportProgress(950, 1000, isPaused: false, before);
+            session.ReportProgress(950, RuntimeTicks, isPaused: false, before);
         }
 
         var job = TranscodeJob.Prepare(session.Id, "libx264", "aac", hls: true, before);
@@ -781,7 +785,10 @@ public sealed class TranscodeLifecycleTests : IAsyncLifetime, IDisposable
             [
                 new MediaStreamInput(0, MediaStreamType.Video, "h264", null, null, 1920, 1080, null, null, true, false),
                 new MediaStreamInput(1, MediaStreamType.Audio, "aac", "eng", 6, null, null, null, null, true, false),
-            ]);
+            ],
+            // The runtime the probe measured, on the same tick scale the reports below use: a conversion is
+            // only ever watched against the server's runtime, never against the length a player reports.
+            DurationSeconds: TimeSpan.FromTicks(RuntimeTicks).TotalSeconds);
 
         await using (var scope = _provider.CreateAsyncScope())
         {

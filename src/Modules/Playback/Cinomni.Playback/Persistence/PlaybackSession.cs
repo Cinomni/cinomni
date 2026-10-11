@@ -64,6 +64,14 @@ public sealed class PlaybackSession
 
     public long PositionTicks { get; private set; }
 
+    /// <summary>
+    /// The file's runtime, which decides when the session counts as watched. The server's own figure
+    /// when it has one, set when the session opens and never replaced by a report. Without one, only a
+    /// Direct Play report may supply it: there the browser reads the file itself. A converted or
+    /// repackaged stream is an HLS playlist that grows as FFmpeg writes it, so what a player reports for
+    /// it is how much has been converted so far — trusted, a viewer who caught up with a slow conversion
+    /// was marked as having watched the whole film.
+    /// </summary>
     public long DurationTicks { get; private set; }
 
     /// <summary>Monotonic progress counter, so each <c>PlaybackProgressUpdated</c> is distinct.</summary>
@@ -105,7 +113,8 @@ public sealed class PlaybackSession
         int? subtitleStreamIndex,
         long resumePositionTicks,
         string? playSessionId,
-        DateTimeOffset now) => new()
+        DateTimeOffset now,
+        long runtimeTicks = 0) => new()
     {
         Id = Uuid7.New(),
         UserId = userId,
@@ -121,6 +130,7 @@ public sealed class PlaybackSession
         AudioStreamIndex = audioStreamIndex,
         SubtitleStreamIndex = subtitleStreamIndex,
         PositionTicks = resumePositionTicks < 0 ? 0 : resumePositionTicks,
+        DurationTicks = runtimeTicks > 0 ? runtimeTicks : 0,
         StartedAt = now,
         UpdatedAt = now,
     };
@@ -149,7 +159,7 @@ public sealed class PlaybackSession
         }
 
         PositionTicks = positionTicks < 0 ? 0 : positionTicks;
-        if (durationTicks > 0)
+        if (durationTicks > 0 && DurationTicks == 0 && Method == PlaybackMethod.DirectPlay)
         {
             DurationTicks = durationTicks;
         }

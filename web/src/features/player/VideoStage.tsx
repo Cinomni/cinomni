@@ -183,14 +183,22 @@ export function VideoStage({
   }, [ticket, offset, applyPendingSeek])
 
   // Report progress on a cadence and on pause, and end the session on leave. Positions are the file's.
-  const durationRef = useRef(duration)
-  durationRef.current = duration
+  // The runtime reported is the server's, or the file's own when the browser plays it directly. A
+  // converted stream's duration is only how much of it exists yet, so it is reported as unknown (0):
+  // sent as the runtime, a viewer who caught up with a slow conversion read as having watched it all.
+  const reportedDuration = media?.durationTicks
+    ? ticksToSeconds(media.durationTicks)
+    : ticket.method === 'DirectPlay' && Number.isFinite(video.duration)
+      ? video.duration
+      : 0
+  const durationRef = useRef(reportedDuration)
+  durationRef.current = reportedDuration
   useEffect(() => {
     const element = videoRef.current
     if (!element) return
 
     const report = (): Promise<unknown> => {
-      if (!Number.isFinite(durationRef.current)) return Promise.resolve()
+      if (!Number.isFinite(positionRef.current)) return Promise.resolve()
       return playbackApi
         .progress(ticket.sessionId, {
           positionTicks: secondsToTicks(positionRef.current),
