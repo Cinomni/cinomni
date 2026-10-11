@@ -44,11 +44,19 @@ internal static class PlaybackFailureExplainer
             ? $"The server could not convert this {source} on its CPU as fast as it plays."
             : $"The server could not convert this {source} as fast as it plays.";
 
-        var change = onCpu
-            ? "An administrator can lower Software encoder maximum resolution or Maximum resolution in Console → "
-                + "Settings → Playback, set up a hardware encoder, or give Cinomni more CPU (CINOMNI_CPUS)."
-            : "An administrator can lower Maximum resolution in Console → Settings → Playback, or choose a faster "
-                + "Encoder speed.";
+        // Already brought down by the software ceiling, the encoder was not what fell behind: decoding the
+        // full-size source was. A smaller picture would barely help, so it is not offered as the fix —
+        // measured on a 4K Dolby Vision file that still ran at 0.80x with its output held to 1080 lines.
+        var decodeBound = onCpu && plan.Decisions.Any(d => d is { Property: "softwareMaxHeight", Verdict: "fail" });
+
+        var change = decodeBound
+            ? "Reading a source this large takes more than the CPU it has. An administrator can set up a hardware "
+                + "encoder that decodes it, or give Cinomni more CPU (CINOMNI_CPUS)."
+            : onCpu
+                ? "An administrator can lower Software encoder maximum resolution or Maximum resolution in Console → "
+                    + "Settings → Playback, set up a hardware encoder, or give Cinomni more CPU (CINOMNI_CPUS)."
+                : "An administrator can lower Maximum resolution in Console → Settings → Playback, or choose a faster "
+                    + "Encoder speed.";
 
         return $"{what} {change}";
     }
