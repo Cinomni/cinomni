@@ -16,6 +16,14 @@ under the rules in *Versioning* below.
   twice. Changing it signs out every other device signed in to that account; the one you used stays
   signed in. Until now only the database procedure in DEPLOYMENT.md could change a password.
 
+### Fixed
+
+- **A converted title is no longer marked watched early.** When the server had no runtime for a file,
+  the player reported the length of the converted stream so far as the film's length; catching up with
+  a slow conversion then marked the title watched a minute in, and the next play started from that wrong
+  length. The runtime now comes only from the server, or from the browser when it plays the file
+  directly; a converted stream with no known runtime records the position without marking anything.
+
 ## [0.1.0-alpha.2] - 2026-09-26
 
 **Collections that fill themselves.** Titles can now be placed on collections by rules instead of

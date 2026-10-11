@@ -109,7 +109,7 @@ public sealed class PlaybackService(
 
         var session = PlaybackSession.Create(
             userId, assetId, asset.Asset.WorkId, version.Id.Value, version.FullPath, ContainerOf(version.FullPath),
-            plan, audioIndex, subtitleIndex, resumePosition, playSessionId: null, now);
+            plan, audioIndex, subtitleIndex, resumePosition, playSessionId: null, now, durationTicks ?? 0);
         session.Begin(now);
 
         var events = new List<IDomainEvent> { new PlaybackStarted(session.Id, userId, assetId, plan.Method.ToString()) };
@@ -197,8 +197,9 @@ public sealed class PlaybackService(
         }
 
         // Watched past the threshold completes the session, but the stream stays on the gauge until it
-        // really ends: the credits are still being converted and served.
-        await UpsertProgressAsync(session, positionTicks, durationTicks, completed, now, cancellationToken);
+        // really ends: the credits are still being converted and served. The runtime recorded is the
+        // session's, never the report's: see PlaybackSession.DurationTicks.
+        await UpsertProgressAsync(session, positionTicks, session.DurationTicks, completed, now, cancellationToken);
 
         await unitOfWork.ExecuteAsync(async token =>
         {

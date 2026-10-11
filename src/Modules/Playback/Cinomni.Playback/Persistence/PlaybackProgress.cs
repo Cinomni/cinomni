@@ -65,8 +65,10 @@ public sealed class PlaybackProgress
     /// </summary>
     public void Record(long positionTicks, long durationTicks, int? audioStreamIndex, int? subtitleStreamIndex, DateTimeOffset now)
     {
+        // Without a runtime there is no share to judge by: the position is kept as reported, so the title
+        // still resumes, and nothing is marked played.
         var ratio = durationTicks > 0 ? (double)positionTicks / durationTicks : 0;
-        PositionTicks = ratio < ResumeFloor ? 0 : positionTicks;
+        PositionTicks = durationTicks > 0 && ratio < ResumeFloor ? 0 : Math.Max(0, positionTicks);
         if (durationTicks > 0)
         {
             DurationTicks = durationTicks;
