@@ -38,14 +38,27 @@ internal sealed class FakeSubtitleFileStore : ISubtitleFileStore
     public Task<byte[]?> ReadAsync(string path, CancellationToken cancellationToken = default) =>
         Task.FromResult(Files.TryGetValue(path, out var content) ? content : null);
 
-    public Task<string> WriteSyncedAsync(string originalPath, byte[] content, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Runs inside <see cref="WriteSyncedAsync"/> before the copy is stored: the moment a pass has
+    /// finished analyzing and has not committed yet, which is where a test puts a move or a revert.
+    /// </summary>
+    public Func<Task>? BeforeWriteSynced { get; set; }
+
+    public bool Exists(string path) => Files.ContainsKey(path);
+
+    public async Task<string> WriteSyncedAsync(string originalPath, byte[] content, CancellationToken cancellationToken = default)
     {
-        var path = SyncedSidecar.PathFor(originalPath);
+        if (BeforeWriteSynced is { } hook)
+        {
+            await hook();
+        }
+
+        var path = SyncedSidecar.PathFor(originalPath, SyncedSidecar.NewToken());
         Files[path] = content;
-        return Task.FromResult(path);
+        return path;
     }
 
-    public Task DeleteSyncedAsync(string syncedPath, CancellationToken cancellationToken = default)
+    public Task DeleteSyncedAsync(string syncedPath, string originalPath, CancellationToken cancellationToken = default)
     {
         Files.TryRemove(syncedPath, out _);
         Deleted.Add(syncedPath);

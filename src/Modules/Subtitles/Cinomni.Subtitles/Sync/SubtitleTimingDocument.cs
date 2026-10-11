@@ -29,6 +29,13 @@ public sealed partial class SubtitleTimingDocument
 {
     public const int MaxCues = 20_000;
 
+    /// <summary>
+    /// Far more lines than <see cref="MaxCues"/> cues ever take (a number, a timing, text, a blank line),
+    /// and checked before the file is split: an 8 MB file of nothing but line breaks would otherwise be
+    /// turned into millions of lines before the cue count could refuse it.
+    /// </summary>
+    public const int MaxLines = MaxCues * 10;
+
     public static readonly TimeSpan MaxTimestamp = TimeSpan.FromHours(48);
 
     private readonly List<Line> _lines;
@@ -45,9 +52,10 @@ public sealed partial class SubtitleTimingDocument
     public IReadOnlyList<SubtitleCue> Cues { get; }
 
     // Hours are optional because WebVTT allows mm:ss.ttt; the fraction is one to three digits because
-    // real SubRip files are not always written with three.
+    // real SubRip files are not always written with three. ASCII digits only: \d also matches every
+    // other script's digits, which the parse below would then refuse with an exception.
     [GeneratedRegex(
-        @"^(?<lead>[ \t]*)(?<start>(?:\d{1,3}:)?\d{1,2}:\d{1,2}[,.]\d{1,3})(?<arrow>[ \t]*-->[ \t]*)(?<end>(?:\d{1,3}:)?\d{1,2}:\d{1,2}[,.]\d{1,3})(?<rest>.*)$",
+        @"^(?<lead>[ \t]*)(?<start>(?:[0-9]{1,3}:)?[0-9]{1,2}:[0-9]{1,2}[,.][0-9]{1,3})(?<arrow>[ \t]*-->[ \t]*)(?<end>(?:[0-9]{1,3}:)?[0-9]{1,2}:[0-9]{1,2}[,.][0-9]{1,3})(?<rest>.*)$",
         RegexOptions.CultureInvariant,
         matchTimeoutMilliseconds: 250)]
     private static partial Regex TimingLine();
@@ -60,6 +68,13 @@ public sealed partial class SubtitleTimingDocument
         if (format is not (SubtitleFormat.Srt or SubtitleFormat.Vtt))
         {
             failure = "only SubRip and WebVTT timing can be rewritten";
+            return false;
+        }
+
+        // A line ends in \n, \r\n or a lone \r; the larger of the two counts is the line count whichever it uses.
+        if (Math.Max(text.AsSpan().Count('\n'), text.AsSpan().Count('\r')) > MaxLines)
+        {
+            failure = $"the file has more than {MaxLines} lines";
             return false;
         }
 

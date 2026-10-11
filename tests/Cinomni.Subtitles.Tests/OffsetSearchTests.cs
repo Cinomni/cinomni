@@ -133,9 +133,9 @@ public sealed class OffsetSearchTests
     }
 
     [Fact]
-    public void A_short_video_sampled_once_can_still_be_synchronized()
+    public void A_ten_minute_video_is_sampled_twice_and_cross_checked()
     {
-        // Arrange — ten minutes: one stretch, so there is nothing to cross-check against.
+        // Arrange — too short for three stretches, long enough for two that do not overlap.
         var dialogue = new SyntheticDialogue(seed: 29, TimeSpan.FromMinutes(10));
         var plan = SyncWindowPlan.For(600, Options.WindowLength);
         var windows = plan.Select(window => dialogue.Speech(window.Start, window.Length, -1_500)).ToList();
@@ -144,9 +144,28 @@ public sealed class OffsetSearchTests
         var verdict = SyncDecider.Decide(OffsetSearch.Estimate(windows, dialogue.Cues), windows.Count, Options);
 
         // Assert
-        Assert.Single(plan);
+        Assert.Equal(2, plan.Count);
+        Assert.True(plan[0].Start + plan[0].Length <= plan[1].Start);
         Assert.Equal(SubtitleSyncOutcome.Applied, verdict.Outcome);
         Assert.InRange(verdict.OffsetMs, -1_520, -1_480);
+    }
+
+    [Fact]
+    public void A_video_too_short_for_two_stretches_is_sampled_once_and_held_to_a_stricter_bar()
+    {
+        // Arrange — an estimate that would pass with a second stretch to confirm it.
+        var plan = SyncWindowPlan.For(180, Options.WindowLength);
+        var borderline = new SyncEstimate(1_000, 1.0, Options.MinScore * 1.2, Options.MinMargin * 1.2, [1_000]);
+
+        // Act
+        var once = SyncDecider.Decide(borderline, windowCount: 1, Options);
+        var twice = SyncDecider.Decide(borderline with { WindowOffsetsMs = [1_000, 1_010] }, windowCount: 2, Options);
+
+        // Assert
+        Assert.Single(plan);
+        Assert.Equal(SubtitleSyncOutcome.LowConfidence, once.Outcome);
+        Assert.Contains("too short to sample more than once", once.Reason, StringComparison.Ordinal);
+        Assert.Equal(SubtitleSyncOutcome.Applied, twice.Outcome);
     }
 
     [Fact]

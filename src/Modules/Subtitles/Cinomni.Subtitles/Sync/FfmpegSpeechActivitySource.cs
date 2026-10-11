@@ -66,7 +66,10 @@ public sealed class FfmpegSpeechActivitySource(SubtitleSyncOptions options, ILog
         "-vn", "-sn", "-dn",
         "-ac", "1",
         "-ar", SpeechDetector.SampleRate.ToString(CultureInfo.InvariantCulture),
-        "-af", "highpass=f=150,lowpass=f=3500",
+        // aresample first: a track whose first sample comes after the video's (an audio delay in the
+        // container) is padded with silence back to the seek point, so frame 0 of the output is the
+        // window's start and not wherever the audio happens to begin.
+        "-af", "aresample=async=1:first_pts=0,highpass=f=150,lowpass=f=3500",
         "-f", "s16le",
         "pipe:1",
     ];
@@ -103,7 +106,7 @@ public sealed class FfmpegSpeechActivitySource(SubtitleSyncOptions options, ILog
 
         try
         {
-            var drain = process.StandardError.ReadToEndAsync(bounded);
+            var drain = DiscardAsync(process.StandardError, bounded);
             var output = await ReadBoundedAsync(process.StandardOutput.BaseStream, maxBytes, bounded);
             if (output is null)
             {
@@ -138,6 +141,19 @@ public sealed class FfmpegSpeechActivitySource(SubtitleSyncOptions options, ILog
         catch (InvalidOperationException)
         {
             // Exited between the check and the kill: nothing left to stop.
+        }
+    }
+
+    /// <summary>
+    /// Reads stderr to the end and keeps none of it. It has to be read — a full pipe would block FFmpeg —
+    /// but what it says can quote the media path and is not used, and a hostile file can make FFmpeg
+    /// write it as fast as it decodes, so it is never accumulated.
+    /// </summary>
+    private static async Task DiscardAsync(StreamReader stderr, CancellationToken cancellationToken)
+    {
+        var buffer = new char[4096];
+        while (await stderr.ReadAsync(buffer.AsMemory(), cancellationToken) > 0)
+        {
         }
     }
 

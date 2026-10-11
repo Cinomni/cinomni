@@ -64,15 +64,36 @@ public sealed class SyncInputsTests
     {
         var original = Path.Combine("library", "Movie", "Movie.en.forced.hi.srt");
 
-        Assert.Equal("Movie.en.forced.hi.synced.srt", SyncedSidecar.NameFor(original));
-        Assert.True(SyncedSidecar.IsSyncedName("Movie.en.synced.srt"));
-        Assert.False(SyncedSidecar.IsSyncedName("Movie.en.srt"));
+        Assert.Equal("Movie.en.forced.hi.synced-0123456789ab.srt", SyncedSidecar.NameFor(original, "0123456789ab"));
 
         var moved = SidecarRelocation.For(
             Path.Combine("library", "Movie", "Movie.mkv"),
             Path.Combine("library", "Movie (1999)", "Movie (1999).mkv"),
-            SyncedSidecar.PathFor(original));
-        Assert.Equal(Path.Combine("library", "Movie (1999)", "Movie (1999).en.forced.hi.synced.srt"), moved);
+            SyncedSidecar.PathFor(original, "0123456789ab"));
+        Assert.Equal(Path.Combine("library", "Movie (1999)", "Movie (1999).en.forced.hi.synced-0123456789ab.srt"), moved);
+    }
+
+    [Fact]
+    public void Only_a_name_this_module_writes_counts_as_a_synchronized_copy()
+    {
+        // Every pass names its copy afresh, so two passes never meet on one name.
+        Assert.NotEqual(SyncedSidecar.NewToken(), SyncedSidecar.NewToken());
+        Assert.True(SyncedSidecar.IsSyncedName(SyncedSidecar.NameFor("Movie.en.srt", SyncedSidecar.NewToken())));
+
+        // A household's own ".synced" file, or anything shaped almost like ours, is never ours to delete.
+        Assert.False(SyncedSidecar.IsSyncedName("Movie.en.synced.srt"));
+        Assert.False(SyncedSidecar.IsSyncedName("Movie.en.synced-XYZ.srt"));
+        Assert.False(SyncedSidecar.IsSyncedName("Movie.en.synced-0123456789ABCDEF.srt"));
+        Assert.False(SyncedSidecar.IsSyncedName("Movie.en.srt"));
+    }
+
+    [Fact]
+    public void Ffmpeg_pads_a_delayed_audio_track_back_to_the_seek_point()
+    {
+        var args = FfmpegSpeechActivitySource.Arguments("/m.mkv", 1, TimeSpan.Zero, TimeSpan.FromMinutes(4));
+
+        var filters = args[args.ToList().IndexOf("-af") + 1];
+        Assert.StartsWith("aresample=async=1:first_pts=0,", filters, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -25,17 +25,22 @@ public interface ISubtitleFileStore
     /// </summary>
     Task<byte[]?> ReadAsync(string path, CancellationToken cancellationToken = default);
 
+    /// <summary>Whether a plain file exists at <paramref name="path"/> (not a link, not a directory).</summary>
+    bool Exists(string path);
+
     /// <summary>
-    /// Writes the synchronized copy of <paramref name="originalPath"/> beside it, as
-    /// <c>&lt;stem&gt;.&lt;lang&gt;[.forced][.hi].synced.&lt;ext&gt;</c> (see <see cref="SyncedSidecar"/>), and
-    /// returns where it landed. Atomic: a reader sees the previous copy or the new one, never half of
-    /// either. The original is never written to.
+    /// Writes a synchronized copy of <paramref name="originalPath"/> beside it, under a name no other file
+    /// has (<c>&lt;stem&gt;.&lt;lang&gt;[.forced][.hi].synced-&lt;token&gt;.&lt;ext&gt;</c>, see
+    /// <see cref="SyncedSidecar"/>), and returns where it landed. It never replaces an existing file — not
+    /// the copy being played, not anything the household keeps — and never writes to the original. The
+    /// copy appears whole or not at all.
     /// </summary>
     Task<string> WriteSyncedAsync(string originalPath, byte[] content, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes a synchronized copy nothing plays any more. Refuses anything not named as one, so it can
-    /// never take a download or a household's own file with it.
+    /// Removes a synchronized copy nothing plays any more. Refuses anything not named as one of this
+    /// module's copies or not sitting beside <paramref name="originalPath"/>, so it can never take a
+    /// download, a household's own file, or anything elsewhere with it.
     /// </summary>
-    Task DeleteSyncedAsync(string syncedPath, CancellationToken cancellationToken = default);
+    Task DeleteSyncedAsync(string syncedPath, string originalPath, CancellationToken cancellationToken = default);
 }

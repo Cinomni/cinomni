@@ -45,8 +45,19 @@ public sealed class RelocateSubtitlesCommandHandler(SubtitlesDbContext dbContext
 
         await unitOfWork.ExecuteAsync(async token =>
         {
-            foreach (var (subtitle, to, toOriginal) in moved)
+            // Each row is locked and read again before it is moved: a sync pass or a revert may have
+            // changed which file it plays since the list above was read, and the move has to carry what
+            // the row says now, not overwrite it with what it said then.
+            foreach (var (candidate, _, _) in moved)
             {
+                if (await dbContext.LockAsync(candidate.Id, token) is not { } subtitle)
+                {
+                    continue;
+                }
+
+                var to = SidecarRelocation.For(command.FromVideoPath, command.ToVideoPath, subtitle.Path) ?? subtitle.Path;
+                var toOriginal = SidecarRelocation.For(command.FromVideoPath, command.ToVideoPath, subtitle.OriginalPath)
+                    ?? subtitle.OriginalPath;
                 subtitle.Relocate(to, toOriginal);
             }
 

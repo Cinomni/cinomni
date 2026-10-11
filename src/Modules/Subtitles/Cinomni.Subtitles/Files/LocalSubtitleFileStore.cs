@@ -8,7 +8,7 @@ namespace Cinomni.Subtitles.Files;
 /// content is untrusted, so it is size-capped before it is written; the file name is composed from
 /// sanitised, closed-vocabulary parts (never from provider text), and the result is proven to stay
 /// inside the video directory (no traversal). A synchronized copy follows the same rules, beside the
-/// original under a fixed <c>.synced</c> name, and lands by atomic rename. Not exercised by unit tests
+/// original under a name no other file has, and lands by rename. Not exercised by unit tests
 /// (real disk is a deployment concern); tests use an in-memory fake.
 /// </summary>
 public sealed class LocalSubtitleFileStore : ISubtitleFileStore
@@ -55,12 +55,34 @@ public sealed class LocalSubtitleFileStore : ISubtitleFileStore
     public async Task<byte[]?> ReadAsync(string path, CancellationToken cancellationToken = default)
     {
         var file = new FileInfo(path);
-        if (!file.Exists || file.LinkTarget is not null || file.Length == 0 || file.Length > MaxSubtitleBytes)
+        if (!file.Exists || file.LinkTarget is not null)
         {
             return null;
         }
 
-        return await File.ReadAllBytesAsync(path, cancellationToken);
+        // One handle for the size check and the read, and never more than the cap read through it: a
+        // file that grows between a separate check and a read-everything would otherwise be read whole.
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length == 0 || stream.Length > MaxSubtitleBytes)
+        {
+            return null;
+        }
+
+        var buffer = new byte[MaxSubtitleBytes + 1];
+        var total = 0;
+        int read;
+        while (total < buffer.Length && (read = await stream.ReadAsync(buffer.AsMemory(total), cancellationToken)) > 0)
+        {
+            total += read;
+        }
+
+        return total is 0 or > MaxSubtitleBytes ? null : buffer[..total];
+    }
+
+    public bool Exists(string path)
+    {
+        var file = new FileInfo(path);
+        return file.Exists && file.LinkTarget is null;
     }
 
     public async Task<string> WriteSyncedAsync(string originalPath, byte[] content, CancellationToken cancellationToken = default)
@@ -70,15 +92,11 @@ public sealed class LocalSubtitleFileStore : ISubtitleFileStore
             throw new InvalidOperationException($"Refusing to write a synchronized subtitle of {content.Length} bytes.");
         }
 
-        var target = ConfinedSibling(originalPath, SyncedSidecar.NameFor(originalPath));
-        if (new FileInfo(target).LinkTarget is not null)
-        {
-            throw new InvalidOperationException("Refusing to write a subtitle through a symbolic link.");
-        }
+        var target = ConfinedSibling(originalPath, SyncedSidecar.NameFor(originalPath, SyncedSidecar.NewToken()));
 
-        // Written whole under a name nothing reads, then renamed over the target: a rename within one
-        // directory is atomic, so a player opening the file mid-write gets the old copy or the new one.
-        var temporary = ConfinedSibling(originalPath, $".{Path.GetFileName(target)}.{Guid.NewGuid():N}.tmp");
+        // Written whole under a name nothing reads, then renamed to a name nothing has: the copy appears
+        // complete or not at all, and the rename refuses rather than replaces if anything is there.
+        var temporary = ConfinedSibling(originalPath, $".{Path.GetFileName(target)}.tmp");
         try
         {
             await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
@@ -87,7 +105,7 @@ public sealed class LocalSubtitleFileStore : ISubtitleFileStore
                 await stream.FlushAsync(cancellationToken);
             }
 
-            File.Move(temporary, target, overwrite: true);
+            File.Move(temporary, target, overwrite: false);
             return target;
         }
         finally
@@ -99,10 +117,14 @@ public sealed class LocalSubtitleFileStore : ISubtitleFileStore
         }
     }
 
-    public Task DeleteSyncedAsync(string syncedPath, CancellationToken cancellationToken = default)
+    public Task DeleteSyncedAsync(string syncedPath, string originalPath, CancellationToken cancellationToken = default)
     {
         var file = new FileInfo(syncedPath);
-        if (SyncedSidecar.IsSyncedName(file.Name) && file.Exists && file.LinkTarget is null)
+        var beside = string.Equals(
+            Path.GetDirectoryName(Path.GetFullPath(syncedPath)),
+            Path.GetDirectoryName(Path.GetFullPath(originalPath)),
+            StringComparison.Ordinal);
+        if (beside && SyncedSidecar.IsSyncedName(file.Name) && file.Exists && file.LinkTarget is null)
         {
             file.Delete();
         }

@@ -6,6 +6,7 @@ using Cinomni.Library.Contracts;
 using Cinomni.Operations.Messaging;
 using Cinomni.Operations.Persistence;
 using Cinomni.Subtitles.Contracts;
+using Cinomni.Subtitles.Files;
 using Cinomni.Subtitles.Messaging;
 using Cinomni.Subtitles.Persistence;
 using Cinomni.Subtitles.Sync;
@@ -26,12 +27,12 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
     private const string MoviePath = "/data/library/Movie.2024/Movie.2024.mkv";
     // Composed as the store composes them, so the separators are the platform's.
     private static readonly string OriginalPath = Path.Combine(Path.GetDirectoryName(MoviePath)!, "Movie.2024.en.srt");
-    private static readonly string SyncedPath = Path.Combine(Path.GetDirectoryName(MoviePath)!, "Movie.2024.en.synced.srt");
     private const long SpokenLateMs = 1_200;
 
     private readonly FakeSubtitleProvider _provider = new();
     private readonly FakeSubtitleFileStore _fileStore = new();
     private readonly FakeSpeechActivitySource _speech = new();
+    private readonly SubtitleSyncOptions _options = new();
     private readonly SyntheticDialogue _dialogue = new(seed: 31, TimeSpan.FromHours(1));
     private ServiceProvider _host = null!;
 
@@ -45,7 +46,7 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
             _fileStore,
             configure: services =>
             {
-                services.AddSingleton(new SubtitleSyncOptions());
+                services.AddSingleton(_options);
                 services.AddSingleton<ISpeechActivitySource>(_speech);
             });
     }
@@ -88,7 +89,7 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
         var search = Assert.Single(await QueryAsync(q => q.ListForAssetAsync(assetId)));
         Assert.Equal(SubtitleSearchState.Available, search.State);
         var subtitle = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
-        Assert.Equal(SyncedPath, subtitle.Path);
+        AssertSyncedCopy(subtitle.Path);
         var sync = Assert.IsType<SubtitleSyncSummary>(subtitle.Sync);
         Assert.Equal(SubtitleSyncOutcome.Applied, sync.Outcome);
         Assert.InRange(sync.OffsetMs, SpokenLateMs - 20, SpokenLateMs + 20);
@@ -98,7 +99,7 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
 
         // The copy moved every cue; the download was not touched.
         var first = _dialogue.Cues[0];
-        var copy = Encoding.UTF8.GetString(_fileStore.Files[SyncedPath]);
+        var copy = Encoding.UTF8.GetString(_fileStore.Files[subtitle.Path]);
         Assert.Contains(SyntheticDialogue.Timestamp(first.StartMs + sync.OffsetMs) + " --> ", copy, StringComparison.Ordinal);
         Assert.Equal(_provider.Content, _fileStore.Files[OriginalPath]);
 
@@ -153,7 +154,7 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
         Assert.Equal(SubtitleSyncOutcome.Failed, subtitle.Sync!.Outcome);
         Assert.Equal("Kept the original because the analysis failed unexpectedly.", subtitle.Sync.Reason);
         Assert.False(subtitle.Sync.HasOriginal);
-        Assert.False(_fileStore.Files.ContainsKey(SyncedPath));
+        Assert.Empty(SyncedCopies());
     }
 
     [Fact]
@@ -234,7 +235,8 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
         var assetId = await RegisterAssetAsync();
         await DrainAsync();
         await ProcessNextAsync();
-        var subtitleId = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId))).Id;
+        var applied = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        var subtitleId = applied.Id;
 
         // Act — revert.
         var reverted = await CommandAsync(c => c.RevertAsync(subtitleId));
@@ -247,7 +249,7 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
         Assert.Equal(OriginalPath, subtitle.Path);
         Assert.Equal(SubtitleSyncOutcome.Reverted, subtitle.Sync!.Outcome);
         Assert.False(subtitle.Sync.HasOriginal);
-        Assert.Contains(SyncedPath, _fileStore.Deleted);
+        Assert.Contains(applied.Path, _fileStore.Deleted);
 
         // Act — resync, twice, then process.
         var resync = await CommandAsync(c => c.ResyncAsync(subtitleId));
@@ -260,7 +262,8 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
         Assert.True(resync.IsSuccess);
         Assert.Equal(SubtitleSyncCommands.InProgress, resyncAgain.Error);
         subtitle = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
-        Assert.Equal(SyncedPath, subtitle.Path);
+        AssertSyncedCopy(subtitle.Path);
+        Assert.NotEqual(applied.Path, subtitle.Path);
         Assert.Equal(SubtitleSyncOutcome.Applied, subtitle.Sync!.Outcome);
         Assert.InRange(subtitle.Sync.OffsetMs, SpokenLateMs - 20, SpokenLateMs + 20);
         Assert.Equal(3, await CountDecisionsAsync());
@@ -274,7 +277,8 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
         var assetId = await RegisterAssetAsync();
         await DrainAsync();
         await ProcessNextAsync();
-        var subtitleId = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId))).Id;
+        var applied = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        var subtitleId = applied.Id;
         _speech.Speech = _dialogue.RandomSpeech;
 
         // Act
@@ -285,7 +289,7 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
         var subtitle = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
         Assert.Equal(SubtitleSyncOutcome.LowConfidence, subtitle.Sync!.Outcome);
         Assert.Equal(OriginalPath, subtitle.Path);
-        Assert.Contains(SyncedPath, _fileStore.Deleted);
+        Assert.Contains(applied.Path, _fileStore.Deleted);
     }
 
     [Fact]
@@ -313,9 +317,9 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
         }
 
         // Assert — and a revert afterwards lands on the moved original.
-        Assert.Equal(
-            "/data/library/Movie (2024)/Movie (2024).en.synced.srt",
-            Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId))).Path.Replace('\\', '/'));
+        var moved = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId))).Path.Replace('\\', '/');
+        Assert.StartsWith("/data/library/Movie (2024)/Movie (2024).en.synced-", moved, StringComparison.Ordinal);
+        AssertSyncedCopy(moved);
         var subtitleId = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId))).Id;
         await CommandAsync(c => c.RevertAsync(subtitleId));
         Assert.Equal(
@@ -323,7 +327,250 @@ public sealed class SubtitleSyncFlowTests : IAsyncLifetime
             Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId))).Path.Replace('\\', '/'));
     }
 
+    // -- races and recovery ----------------------------------------------------------------------
+
+    private const string MovedMoviePath = "/data/library/Movie (2024)/Movie (2024).mkv";
+
+    [Fact]
+    public async Task A_move_recorded_while_a_pass_runs_fails_the_pass_and_leaves_no_stray_copy()
+    {
+        // Arrange — Import moves the video and its sidecars, and the relocation commits, after the pass
+        // has analyzed and before it records its verdict.
+        var assetId = await RegisterAssetAsync();
+        await DrainAsync();
+        _fileStore.BeforeWriteSynced = async () =>
+        {
+            _fileStore.BeforeWriteSynced = null;
+            MoveOnDisk(OriginalPath, MovedOriginal);
+            await RelocateAsync(assetId);
+        };
+
+        // Act
+        Assert.True(await ProcessNextAsync());
+
+        // Assert — the subtitle plays the moved download, the copy written beside the old one is gone,
+        // and the verdict says why nothing was applied.
+        var subtitle = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        Assert.Equal(MovedOriginal, subtitle.Path.Replace('\\', '/'));
+        Assert.Equal(SubtitleSyncOutcome.Failed, subtitle.Sync!.Outcome);
+        Assert.Equal("Kept the original because the video moved while it was analyzed.", subtitle.Sync.Reason);
+        Assert.Empty(SyncedCopies());
+        Assert.Equal(SubtitleSearchState.Available, Assert.Single(await QueryAsync(q => q.ListForAssetAsync(assetId))).State);
+    }
+
+    [Fact]
+    public async Task A_move_on_disk_whose_relocation_has_not_arrived_is_caught_before_the_copy_is_adopted()
+    {
+        // Arrange — the files moved, but Subtitles has not been told yet: the row still names the old place.
+        var assetId = await RegisterAssetAsync();
+        await DrainAsync();
+        _fileStore.BeforeWriteSynced = () =>
+        {
+            _fileStore.BeforeWriteSynced = null;
+            MoveOnDisk(OriginalPath, MovedOriginal);
+            return Task.CompletedTask;
+        };
+
+        // Act — the pass completes first, the relocation after it.
+        Assert.True(await ProcessNextAsync());
+        await RelocateAsync(assetId);
+
+        // Assert — the row follows the download to where it really is, not to a copy nothing moved.
+        var subtitle = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        Assert.Equal(MovedOriginal, subtitle.Path.Replace('\\', '/'));
+        Assert.Equal(SubtitleSyncOutcome.Failed, subtitle.Sync!.Outcome);
+        Assert.Empty(SyncedCopies());
+    }
+
+    [Fact]
+    public async Task A_resync_leaves_the_copy_being_played_alone_until_its_verdict_commits()
+    {
+        // Arrange — synchronized once, then queued again.
+        var assetId = await RegisterAssetAsync();
+        await DrainAsync();
+        await ProcessNextAsync();
+        var playing = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        Assert.True((await CommandAsync(c => c.ResyncAsync(playing.Id))).IsSuccess);
+        byte[]? whilePassRuns = null;
+        _fileStore.BeforeWriteSynced = () =>
+        {
+            whilePassRuns = _fileStore.Files.TryGetValue(playing.Path, out var content) ? content : null;
+            return Task.CompletedTask;
+        };
+
+        // Act
+        await ProcessNextAsync();
+
+        // Assert — the old copy was still there, untouched, while the new one was written; once the new
+        // verdict committed it moved to a copy of its own and the old one went.
+        Assert.NotNull(whilePassRuns);
+        var now = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        AssertSyncedCopy(now.Path);
+        Assert.NotEqual(playing.Path, now.Path);
+        Assert.Contains(playing.Path, _fileStore.Deleted);
+        Assert.Equal([now.Path], SyncedCopies());
+    }
+
+    [Fact]
+    public async Task A_revert_asked_for_while_a_pass_runs_is_refused_and_the_pass_still_lands()
+    {
+        // Arrange
+        var assetId = await RegisterAssetAsync();
+        await DrainAsync();
+        var subtitleId = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId))).Id;
+        Cinomni.Kernel.Results.Result? revert = null;
+        _fileStore.BeforeWriteSynced = async () =>
+        {
+            _fileStore.BeforeWriteSynced = null;
+            revert = await CommandAsync(c => c.RevertAsync(subtitleId));
+        };
+
+        // Act
+        await ProcessNextAsync();
+
+        // Assert
+        Assert.Equal(SubtitleSyncCommands.InProgress, revert!.Value.Error);
+        var subtitle = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        Assert.Equal(SubtitleSyncOutcome.Applied, subtitle.Sync!.Outcome);
+        AssertSyncedCopy(subtitle.Path);
+    }
+
+    [Fact]
+    public async Task Two_reverts_at_once_revert_once()
+    {
+        // Arrange
+        var assetId = await RegisterAssetAsync();
+        await DrainAsync();
+        await ProcessNextAsync();
+        var subtitleId = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId))).Id;
+
+        // Act
+        var results = await Task.WhenAll(
+            CommandAsync(c => c.RevertAsync(subtitleId)),
+            CommandAsync(c => c.RevertAsync(subtitleId)));
+
+        // Assert — one took it, the other found nothing left to revert, and history says it once.
+        Assert.Single(results, r => r.IsSuccess);
+        Assert.Single(results, r => r.IsFailure && r.Error == SubtitleSyncCommands.NotSynced);
+        await WithDbAsync(async db => Assert.Equal(
+            1, await db.SyncDecisions.CountAsync(d => d.Outcome == SubtitleSyncOutcome.Reverted)));
+    }
+
+    [Fact]
+    public async Task Two_workers_racing_for_one_subtitle_analyze_and_decide_it_once()
+    {
+        // Arrange
+        var assetId = await RegisterAssetAsync();
+        await DrainAsync();
+
+        // Act
+        var processed = await Task.WhenAll(ProcessNextAsync(), ProcessNextAsync());
+
+        // Assert
+        Assert.Single(processed, p => p);
+        Assert.Equal(3, _speech.Requests.Count);
+        Assert.Equal(1, await CountDecisionsAsync());
+        Assert.Single(SyncedCopies());
+        Assert.Equal(SubtitleSearchState.Available, Assert.Single(await QueryAsync(q => q.ListForAssetAsync(assetId))).State);
+    }
+
+    [Fact]
+    public async Task A_pass_claimed_past_its_attempts_is_given_up_with_the_reason()
+    {
+        // Arrange — the row has already been started as many times as it may be.
+        var assetId = await RegisterAssetAsync();
+        await DrainAsync();
+        await WithDbAsync(db => db.SyncWork.ExecuteUpdateAsync(set => set.SetProperty(w => w.Attempts, _options.MaxAttempts)));
+
+        // Act
+        await ProcessNextAsync();
+
+        // Assert
+        var subtitle = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        Assert.Equal(SubtitleSyncOutcome.Failed, subtitle.Sync!.Outcome);
+        Assert.Contains("was interrupted", subtitle.Sync.Reason, StringComparison.Ordinal);
+        Assert.Empty(_speech.Requests);
+        Assert.Equal(0, await CountWorkAsync());
+    }
+
+    [Fact]
+    public async Task A_pass_that_breaks_outside_its_analysis_gives_its_claim_back_and_is_retried()
+    {
+        // Arrange — something the pass does not turn into a verdict, after the copy was decided on.
+        var assetId = await RegisterAssetAsync();
+        await DrainAsync();
+        _fileStore.BeforeWriteSynced = () =>
+        {
+            _fileStore.BeforeWriteSynced = null;
+            throw new NotSupportedException("the disk went away");
+        };
+
+        // Act — the first pass breaks; the next tick runs it again.
+        Assert.True(await ProcessNextAsync());
+        await WithDbAsync(async db =>
+        {
+            var work = await db.SyncWork.AsNoTracking().SingleAsync();
+            Assert.Null(work.ClaimedAt);
+            Assert.Equal(1, work.Attempts);
+        });
+        Assert.Equal(SubtitleSearchState.Syncing, Assert.Single(await QueryAsync(q => q.ListForAssetAsync(assetId))).State);
+        Assert.True(await ProcessNextAsync());
+
+        // Assert
+        var subtitle = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        Assert.Equal(SubtitleSyncOutcome.Applied, subtitle.Sync!.Outcome);
+        Assert.Equal(1, await CountDecisionsAsync());
+    }
+
+    [Fact]
+    public async Task Turning_synchronization_off_keeps_a_copy_already_applied_when_its_resync_comes_round()
+    {
+        // Arrange — applied, queued again, and then the feature is switched off.
+        var assetId = await RegisterAssetAsync();
+        await DrainAsync();
+        await ProcessNextAsync();
+        var applied = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        Assert.True((await CommandAsync(c => c.ResyncAsync(applied.Id))).IsSuccess);
+        _options.Enabled = false;
+
+        // Act
+        await ProcessNextAsync();
+
+        // Assert
+        var subtitle = Assert.Single(await QueryAsync(q => q.ListObtainedAsync(assetId)));
+        Assert.Equal(applied.Path, subtitle.Path);
+        Assert.Equal(SubtitleSyncOutcome.Failed, subtitle.Sync!.Outcome);
+        Assert.Equal("Kept the current synchronized copy because synchronization is turned off.", subtitle.Sync.Reason);
+    }
+
+    private static readonly string MovedOriginal = "/data/library/Movie (2024)/Movie (2024).en.srt";
+
+    /// <summary>What Import does to the files before it tells this module: the download changes place.</summary>
+    private void MoveOnDisk(string from, string to)
+    {
+        Assert.True(_fileStore.Files.TryRemove(from, out var content));
+        _fileStore.Files[to] = content;
+    }
+
+    private async Task RelocateAsync(Guid assetId)
+    {
+        await using var scope = _host.CreateAsyncScope();
+        var result = await scope.ServiceProvider.GetRequiredService<ICommandHandler<RelocateSubtitlesCommand>>()
+            .HandleAsync(new RelocateSubtitlesCommand(assetId, MoviePath, MovedMoviePath));
+        Assert.True(result.IsSuccess);
+    }
+
     // -- helpers ---------------------------------------------------------------------------------
+
+    /// <summary>A copy this module wrote: its own kind of name, beside the original it was made from.</summary>
+    private static void AssertSyncedCopy(string path)
+    {
+        Assert.True(SyncedSidecar.IsSyncedName(Path.GetFileName(path)), $"'{path}' is not named as a synchronized copy.");
+        Assert.StartsWith("Movie", Path.GetFileName(path), StringComparison.Ordinal);
+    }
+
+    private List<string> SyncedCopies() =>
+        [.. _fileStore.Files.Keys.Where(path => SyncedSidecar.IsSyncedName(Path.GetFileName(path)))];
 
     private async Task<Guid> RegisterAssetAsync(bool withAudio = true)
     {
