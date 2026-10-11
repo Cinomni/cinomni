@@ -289,6 +289,13 @@ has the stream closed at their next progress report. Every session records why i
 stopped, idle, expired, access revoked, failed, restarted) on the session row, and
 `GET /api/playback/sessions/{id}` returns it as `endReason`.
 
+Every service writes its output through Docker's `json-file` driver, capped at three 10 MB files per
+container: older lines are dropped, the container never is. The application logs at `Information`
+but leaves out the SQL of each database command, which on its own came to about 8 MB an hour on an
+idle installation. To see it while chasing a problem, set
+`Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command=Information` on the `cinomni`
+service and restart it; take it out again afterwards.
+
 ### Provider credentials: all optional
 
 Each one is optional, and each disables something precisely. Cinomni starts either way and logs the

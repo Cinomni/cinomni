@@ -50,6 +50,11 @@ under the rules in *Versioning* below.
   a slow conversion then marked the title watched a minute in, and the next play started from that wrong
   length. The runtime now comes only from the server, or from the browser when it plays the file
   directly; a converted stream with no known runtime records the position without marking anything.
+- **The logs no longer grow without bound.** The application wrote the SQL of every database command
+  at `Information`, about 8 MB an hour on an idle installation, into a Docker log file nothing
+  rotated. It now leaves those out, and every service in `docker-compose.yml` and the VPN overlay
+  keeps at most three 10 MB log files. Recreate the containers (`docker compose up -d`) for the
+  rotation to apply; the logs already written stay until then.
 
 ## [0.1.0-alpha.2] - 2026-09-26
 

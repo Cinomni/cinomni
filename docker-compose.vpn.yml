@@ -114,6 +114,11 @@ services:
     # `service_healthy` conditions below mean something. An image you substitute must declare one too —
     # Compose refuses the dependency outright if it does not, which is the right way to find out.
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   torrent-sidecar:
     # Sharing the tunnel's network namespace: the sidecar loses its own addresses and networks, which
