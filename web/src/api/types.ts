@@ -516,6 +516,32 @@ export type SubtitleState =
   | 'Syncing'
   | 'NotFound'
   | 'Available'
+/** What a synchronization pass decided about a subtitle's timing. Only `Applied` changes the file played. */
+export type SubtitleSyncOutcome =
+  | 'Applied'
+  | 'AlreadyInSync'
+  | 'LowConfidence'
+  | 'Unsupported'
+  | 'Failed'
+  | 'Reverted'
+export interface SubtitleSync {
+  outcome: SubtitleSyncOutcome
+  /** The best offset found, applied or not: a cue at `t` plays at `t × ratio + offsetMs`. */
+  offsetMs: number
+  /** 1, or a 25 ↔ 23.976 fps conversion. */
+  ratio: number
+  score: number
+  reason: string
+  /** The file played is a synchronized copy, so the download can be put back. */
+  hasOriginal: boolean
+  decidedAt: string
+}
+export interface ObtainedSubtitle {
+  id: string
+  format: 'Srt' | 'Ass' | 'Vtt'
+  /** Null until a pass has decided (or when synchronization is off). */
+  sync: SubtitleSync | null
+}
 export interface SubtitleSearchSummary {
   id: string
   assetId: string
@@ -524,6 +550,8 @@ export interface SubtitleSearchSummary {
   hearingImpaired: boolean
   state: SubtitleState
   attempts: number
+  /** The subtitle this search landed, if any. */
+  subtitle: ObtainedSubtitle | null
 }
 
 // --- Playback -----------------------------------------------------------------------------------

@@ -344,7 +344,7 @@ function AssetPanel({ assets, work, isAdmin }: { assets: AssetsQueryView; work: 
 
       <div>
         <Disclosure title="Subtitles" hint="Searches for this file and their outcome">
-          <SubtitlePanel assetId={asset.id} />
+          <SubtitlePanel assetId={asset.id} canManage={isAdmin} />
         </Disclosure>
         <Disclosure
           title="Advanced"
