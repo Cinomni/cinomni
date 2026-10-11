@@ -89,7 +89,8 @@ public sealed class FfmpegSubtitleConverter(FfmpegEncoderOptions options, ILogge
         try
         {
             // stderr is drained and dropped: it can quote the media path, and a full pipe would stall FFmpeg.
-            var drain = process.StandardError.ReadToEndAsync(bounded);
+            // Dropped as it is read, never accumulated: a hostile file can make FFmpeg write it endlessly.
+            var drain = DiscardAsync(process.StandardError, bounded);
             var feed = stdin is null ? Task.CompletedTask : FeedAsync(process.StandardInput, stdin, bounded);
             var output = await ReadBoundedAsync(process.StandardOutput, bounded);
             if (output is null)
@@ -117,6 +118,14 @@ public sealed class FfmpegSubtitleConverter(FfmpegEncoderOptions options, ILogge
         finally
         {
             Kill(process);
+        }
+    }
+
+    private static async Task DiscardAsync(StreamReader stderr, CancellationToken cancellationToken)
+    {
+        var buffer = new char[4096];
+        while (await stderr.ReadAsync(buffer.AsMemory(), cancellationToken) > 0)
+        {
         }
     }
 
