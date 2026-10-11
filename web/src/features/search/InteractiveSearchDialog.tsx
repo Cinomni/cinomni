@@ -332,8 +332,8 @@ function HistoryRow({
             icon={<DownloadIcon className="size-4" />}
             onClick={() => (rejected ? setConfirming(true) : onGrab())}
           >
-            Grab
-            <span className="sr-only"> {evaluation.releaseTitle}</span>
+            Grab{' '}
+            <span className="sr-only">{evaluation.releaseTitle}</span>
           </Button>
         )}
       </div>
