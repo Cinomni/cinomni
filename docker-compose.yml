@@ -31,6 +31,14 @@
 
 name: cinomni
 
+# Docker keeps a container's output in one file that grows for ever unless told otherwise. Each service
+# keeps at most three 10 MB files of it; older lines are dropped, never the container.
+x-logging: &bounded-logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
@@ -65,6 +73,7 @@ services:
       - SETUID
     shm_size: 256mb
     restart: unless-stopped
+    logging: *bounded-logs
 
   cinomni:
     image: ghcr.io/cinomni/cinomni:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.2}
@@ -178,6 +187,7 @@ services:
           cpus: "${CINOMNI_CPUS:-4.0}"
           memory: ${CINOMNI_MEMORY:-2g}
     restart: unless-stopped
+    logging: *bounded-logs
 
   torrent-sidecar:
     image: ghcr.io/cinomni/cinomni-torrent-sidecar:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.2}
@@ -231,6 +241,7 @@ services:
           cpus: "${SIDECAR_CPUS:-2.0}"
           memory: ${SIDECAR_MEMORY:-1g}
     restart: unless-stopped
+    logging: *bounded-logs
 
   indexer-egress:
     image: ghcr.io/cinomni/cinomni-indexer-egress:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.2}
@@ -253,6 +264,7 @@ services:
           cpus: "0.50"
           memory: 128m
     restart: unless-stopped
+    logging: *bounded-logs
 
   flaresolverr:
     image: ghcr.io/cinomni/cinomni-flaresolverr:${CINOMNI_IMAGE_TAG:-0.1.0-alpha.2}
@@ -286,6 +298,7 @@ services:
     # once ("can't start new thread"); 1024 fits a few concurrent browsers and is still a bound.
     pids_limit: 1024
     restart: unless-stopped
+    logging: *bounded-logs
 
 networks:
   # No route out and no other member: the database is reachable from the application and nothing else.
