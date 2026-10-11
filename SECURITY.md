@@ -85,6 +85,21 @@ traversal**, **command/argument injection** into external processes, **XXE** in 
 - The transcode root is a directory Playback deletes in on its own initiative, so it must not share
   a tree with the library or the staging area: startup refuses it (`TranscodeRootStartup`), and a
   session-named directory no row names is removed only when it holds nothing but HLS output.
+- Subtitle synchronization runs FFmpeg too, from the Subtitles module's own worker
+  (`FfmpegSpeechActivitySource`), with the same rules and its own copy of the plumbing (modules do
+  not share implementations). The argv is a fixed vocabulary plus the library path Library validated,
+  a stream index and two numbers the module formats itself; the only output is raw 8 kHz PCM on stdout,
+  read up to the size of the stretch asked for (about 4 minutes) and no further. Each run has a timeout
+  (`Subtitles:Sync:WindowTimeout`) and a concurrency bound, the process tree is killed past either,
+  stderr is drained and dropped, and a missing or failing FFmpeg is a recorded outcome that keeps the
+  original subtitle, never an error that blocks it.
+- The subtitle file a pass re-times is a provider's download, so it is parsed as hostile: read only
+  through the file store (8 MiB cap, a file that is a symbolic link is refused), decoded by byte-order mark, strict UTF-8 or
+  Windows-1252, and matched line by line against a strict timing pattern with a regex timeout. More
+  than 20,000 cues refuses the file; a timestamp past 48 hours, minutes or seconds past 59, or an
+  inverted cue is ignored. The rewrite changes only the timing lines, clamps a cue moved before zero
+  to zero, never writes to the original, and writes the copy to a fixed `.synced` name in the original's own
+  directory, confined there, through a temporary file and an atomic rename.
 - The libtorrent sidecar is a separate process; in production it is intended to run inside a VPN
   network namespace with no published ports.
 - The opt-in qBittorrent engine is somebody else's process: Cinomni cannot see or enforce its network
