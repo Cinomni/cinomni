@@ -263,6 +263,7 @@ public sealed class RateLimitTests
             [
                 ("POST /api/identity/login", RateLimitPolicies.AnonymousCredentials),
                 ("POST /api/identity/login/two-factor", RateLimitPolicies.AnonymousCredentials),
+                ("POST /api/identity/password", RateLimitPolicies.AccountCredentials),
                 ("POST /api/identity/setup", RateLimitPolicies.AnonymousCredentials),
                 ("POST /api/identity/two-factor/confirm", RateLimitPolicies.AccountCredentials),
                 ("POST /api/identity/two-factor/disable", RateLimitPolicies.AccountCredentials),

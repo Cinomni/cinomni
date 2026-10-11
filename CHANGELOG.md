@@ -10,7 +10,11 @@ under the rules in *Versioning* below.
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **Change your own password.** Your account → Password asks for the current password and the new one
+  twice. Changing it signs out every other device signed in to that account; the one you used stays
+  signed in. Until now only the database procedure in DEPLOYMENT.md could change a password.
 
 ## [0.1.0-alpha.2] - 2026-09-26
 

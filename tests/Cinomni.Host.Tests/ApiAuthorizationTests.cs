@@ -50,6 +50,9 @@ public sealed class ApiAuthorizationTests
         "POST /api/identity/two-factor/enroll",
         "POST /api/identity/two-factor/confirm",
         "POST /api/identity/two-factor/disable",
+        // Your own password: the current one is required on top of the session, it is throttled per
+        // account like the second factor, and every other session ends with the change.
+        "POST /api/identity/password",
         "GET /api/identity/me",
         "POST /api/identity/logout",
 

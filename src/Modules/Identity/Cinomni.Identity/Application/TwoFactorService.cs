@@ -266,14 +266,7 @@ public sealed class TwoFactorService(
         // Every other session goes. Taking the second factor off is a downgrade of what protects this
         // account, so a session left open somewhere else now carries more weight than it did, not
         // less — the one making the change is the only one that keeps its footing.
-        var currentHash = tokenFactory.Hash(currentToken);
-        var others = await dbContext.Sessions
-            .Where(s => s.UserId == userId.Value && s.RevokedAt == null && s.TokenHash != currentHash)
-            .ToListAsync(cancellationToken);
-        foreach (var session in others)
-        {
-            session.RevokedAt = now;
-        }
+        await dbContext.RevokeOtherSessionsAsync(userId, tokenFactory.Hash(currentToken), now, cancellationToken);
 
         await unitOfWork.ExecuteAsync(dbContext.SaveChangesAsync, cancellationToken);
         return Result.Success();

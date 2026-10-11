@@ -180,6 +180,30 @@ public static class IdentityEndpoints
             .RequireAuthorization()
             .RequireRateLimiting(RateLimitPolicies.AccountCredentials);
 
+        // Changing the account's own password. The current one comes with it, for the reason enrolment
+        // asks for it: a borrowed session must not be enough to lock the owner out. Every other session
+        // ends — somebody changing a password may well be doing it because one of them is not theirs.
+        group.MapPost("/password", async (
+            ChangePasswordRequest request,
+            HttpContext context,
+            ClaimsPrincipal principal,
+            IPasswordChangeService passwords,
+            CancellationToken cancellationToken) =>
+        {
+            if (Viewer.From(principal) is not { } viewer)
+            {
+                return Results.Unauthorized();
+            }
+
+            var token = BearerTokens.Extract(context.Request.Headers.Authorization.ToString());
+            var changed = await passwords.ChangeAsync(
+                new UserId(viewer.UserId), request.CurrentPassword, request.NewPassword, token ?? string.Empty, cancellationToken);
+
+            return changed.IsSuccess ? Results.NoContent() : FailureResult(changed.Error);
+        })
+            .RequireAuthorization()
+            .RequireRateLimiting(RateLimitPolicies.AccountCredentials);
+
         // The currently authenticated user (from the validated bearer token).
         group.MapGet("/me", async (
             ClaimsPrincipal principal,
@@ -363,6 +387,10 @@ public static class IdentityEndpoints
     public sealed record TwoFactorCodeRequest([property: JsonRequired] string Code);
 
     public sealed record TwoFactorDisableRequest([property: JsonRequired] string Password, [property: JsonRequired] string Code);
+
+    public sealed record ChangePasswordRequest(
+        [property: JsonRequired] string CurrentPassword,
+        [property: JsonRequired] string NewPassword);
 
     public sealed record PermissionsBody(
         bool CanRequest,

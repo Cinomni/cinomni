@@ -1,4 +1,6 @@
-﻿namespace Cinomni.Identity.Application;
+﻿using Cinomni.Kernel.Results;
+
+namespace Cinomni.Identity.Application;
 
 /// <summary>
 /// The bounds on what may be submitted as a credential, shared by the two paths that accept one so
@@ -23,4 +25,24 @@ internal static class CredentialLimits
     /// the insert with a 500.
     /// </summary>
     public const int MaximumUsernameLength = 100;
+
+    /// <summary>
+    /// Why a password cannot be set, or null when it can. One rule for every path that sets one —
+    /// setup, an invitation and a change — so an account cannot end up with a password another path
+    /// would have refused.
+    /// </summary>
+    public static Error? RefusePassword(string password)
+    {
+        if (password.Length < MinimumPasswordLength)
+        {
+            return new Error("identity.weak_password", $"Password must be at least {MinimumPasswordLength} characters.");
+        }
+
+        if (password.Length > MaximumPasswordLength)
+        {
+            return new Error("identity.password_too_long", $"Password must be at most {MaximumPasswordLength} characters.");
+        }
+
+        return null;
+    }
 }

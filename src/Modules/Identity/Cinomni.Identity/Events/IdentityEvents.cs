@@ -7,6 +7,7 @@ public static class IdentityEventNames
 {
     public const string UserCreated = "identity.user-created";
     public const string UserAuthenticated = "identity.user-authenticated";
+    public const string PasswordChanged = "identity.password-changed";
 }
 
 /// <summary>A user account was created. Published atomically with the account write.</summary>
@@ -21,4 +22,14 @@ public sealed record UserAuthenticated(Guid UserId, string Username) : DomainEve
 {
     // Each login is a distinct occurrence; the event's own timestamp keeps the key unique.
     public override string IdempotencyKey => $"user-authenticated:{UserId}:{OccurredAt:O}";
+}
+
+/// <summary>
+/// An account changed its own password. Published atomically with the new hash and the revocation of
+/// the account's other sessions; it carries no credential material of any kind.
+/// </summary>
+public sealed record PasswordChanged(Guid UserId) : DomainEvent
+{
+    // Each change is a distinct occurrence; the event's own timestamp keeps the key unique.
+    public override string IdempotencyKey => $"password-changed:{UserId}:{OccurredAt:O}";
 }

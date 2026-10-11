@@ -14,6 +14,7 @@ vi.mock('@/api/endpoints', () => ({
     enrollTwoFactor: vi.fn(),
     confirmTwoFactor: vi.fn(),
     disableTwoFactor: vi.fn(),
+    changePassword: vi.fn(),
   },
 }))
 
@@ -39,6 +40,7 @@ beforeEach(() => {
     recoveryCodes: ['aaaa-1111', 'bbbb-2222', 'cccc-3333'],
   })
   vi.mocked(identityApi.disableTwoFactor).mockResolvedValue(undefined)
+  vi.mocked(identityApi.changePassword).mockResolvedValue(undefined)
 })
 
 describe('AccountPage request limit', () => {
@@ -314,5 +316,76 @@ describe('AccountPage two-factor removal', () => {
     await waitFor(() =>
       expect(identityApi.disableTwoFactor).toHaveBeenCalledWith('correct horse', 'aaaa-1111'),
     )
+  })
+})
+
+describe('AccountPage password', () => {
+  async function fillPassword(user: ReturnType<typeof userEvent.setup>, next: string, confirmation: string) {
+    await user.type(screen.getByLabelText('Current password'), 'correct horse')
+    await user.type(screen.getByLabelText('New password'), next)
+    await user.type(screen.getByLabelText('Confirm new password'), confirmation)
+    await user.click(screen.getByRole('button', { name: 'Change password' }))
+  }
+
+  it('AccountPage_never_sends_a_new_password_its_confirmation_does_not_match', async () => {
+    // Arrange
+    const user = userEvent.setup()
+    signedIn(false)
+    renderWithProviders(<AccountPage />)
+
+    // Act
+    await fillPassword(user, 'battery staple', 'battery stapel')
+
+    // Assert
+    expect(await screen.findByText(/do not match/)).toBeInTheDocument()
+    expect(identityApi.changePassword).not.toHaveBeenCalled()
+  })
+
+  it('AccountPage_sends_the_current_and_new_password_and_clears_the_form_once_changed', async () => {
+    // Arrange
+    const user = userEvent.setup()
+    signedIn(false)
+    renderWithProviders(<AccountPage />)
+
+    // Act
+    await fillPassword(user, 'battery staple', 'battery staple')
+
+    // Assert — and the other devices being signed out is said, not left to be discovered there.
+    expect(await screen.findByText(/other devices were signed out/i)).toBeInTheDocument()
+    expect(identityApi.changePassword).toHaveBeenCalledWith('correct horse', 'battery staple')
+    expect(screen.getByLabelText('Current password')).toHaveValue('')
+    expect(screen.getByLabelText('New password')).toHaveValue('')
+  })
+
+  it('AccountPage_says_which_field_was_wrong_when_the_current_password_is_refused', async () => {
+    // Arrange — the server's wording is the sign-in's, which names a username this form does not have.
+    const user = userEvent.setup()
+    signedIn(false)
+    vi.mocked(identityApi.changePassword).mockRejectedValue(
+      new ApiError(401, 'identity.invalid_credentials', 'The current password is not correct.'),
+    )
+    renderWithProviders(<AccountPage />)
+
+    // Act
+    await fillPassword(user, 'battery staple', 'battery staple')
+
+    // Assert
+    expect(await screen.findByText('Your current password is not correct.')).toBeInTheDocument()
+  })
+
+  it('AccountPage_passes_the_servers_reason_through_when_the_new_password_is_refused', async () => {
+    // Arrange
+    const user = userEvent.setup()
+    signedIn(false)
+    vi.mocked(identityApi.changePassword).mockRejectedValue(
+      new ApiError(400, 'identity.password_unchanged', 'The new password must be different from the current one.'),
+    )
+    renderWithProviders(<AccountPage />)
+
+    // Act
+    await fillPassword(user, 'correct horse', 'correct horse')
+
+    // Assert
+    expect(await screen.findByText('The new password must be different from the current one.')).toBeInTheDocument()
   })
 })
