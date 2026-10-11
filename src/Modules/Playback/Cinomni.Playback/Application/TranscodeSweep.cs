@@ -42,6 +42,7 @@ public sealed class TranscodeSweep(
         await RecordExitsAsync(cancellationToken);
         await CloseIdleAsync(cancellationToken);
         await CloseExpiredAsync(cancellationToken);
+        await CloseTooSlowAsync(cancellationToken);
         await ReconcileAsync(cancellationToken);
     }
 
@@ -115,6 +116,40 @@ public sealed class TranscodeSweep(
                     sessionId, session => SessionCloser.Close(session, PlaybackEndReason.Expired), cancellationToken);
                 logger.LogInformation(
                     "Closed the transcode of session {SessionId}: it reached the longest a transcode may run.", sessionId);
+            });
+        }
+    }
+
+    /// <summary>
+    /// Ends every stream whose encoder has stayed slower than the video plays for a whole measurement
+    /// window (<see cref="EncodeSpeed"/>). Left alone it would never fail: the playlist keeps growing,
+    /// just more slowly than the player reads it, and the viewer watches a spinner until they give up.
+    /// Ending it fails the session with a reason the player shows, and frees the CPU for everyone else.
+    /// </summary>
+    private async Task CloseTooSlowAsync(CancellationToken cancellationToken)
+    {
+        foreach (var sessionId in transcodes.Converting())
+        {
+            if (workspace.EncodedSeconds(sessionId) is not { } encoded
+                || transcodes.RecordEncoded(sessionId, encoded) is not { } speed
+                || speed >= EncodeSpeed.MinimumSpeed)
+            {
+                continue;
+            }
+
+            await EachAsync(sessionId, "close the stream that cannot keep up", async () =>
+            {
+                var reason = string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"Converted at {speed:0.00}x real time; a stream needs at least {EncodeSpeed.MinimumSpeed:0.0}x to keep playing.");
+
+                await transcodes.EndAsync(sessionId);
+                await updates.ApplyAsync(sessionId, session =>
+                    session.FailTooSlow(reason, DateTimeOffset.UtcNow) is { } jobs
+                        ? [.. jobs.Select(job => new TranscodeFailed(job.Id, reason))]
+                        : null, cancellationToken);
+                logger.LogWarning(
+                    "Ended the transcode of session {SessionId}: it converted at {Speed:0.00}x real time.", sessionId, speed);
             });
         }
     }

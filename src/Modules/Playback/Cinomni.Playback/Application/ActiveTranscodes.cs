@@ -112,6 +112,7 @@ public sealed class ActiveTranscodes(
 
             entry.Process = process;
             entry.LastSeen = clock.GetUtcNow();
+            entry.Speed = new EncodeSpeed(entry.LastSeen);
             return true;
         }
     }
@@ -240,6 +241,35 @@ public sealed class ActiveTranscodes(
     }
 
     /// <summary>
+    /// The sessions whose FFmpeg is still converting: attached and not exited. A stream adopted after a
+    /// restart, or one whose encoder has finished the file, has nothing left to fall behind on.
+    /// </summary>
+    public IReadOnlyList<Guid> Converting()
+    {
+        lock (_gate)
+        {
+            return [.. _entries
+                .Where(pair => pair.Value is { Speed: not null, ExitRecorded: false, Process.HasExited: false })
+                .Select(pair => pair.Key)];
+        }
+    }
+
+    /// <summary>
+    /// Feeds a reading of how much video a session's playlist lists, and returns the speed over the
+    /// window that just closed: null while warming up, between windows, or once the session is no
+    /// longer converting here.
+    /// </summary>
+    public double? RecordEncoded(Guid sessionId, double encodedSeconds)
+    {
+        lock (_gate)
+        {
+            return _entries.TryGetValue(sessionId, out var entry) && entry.Speed is { } speed
+                ? speed.Observe(clock.GetUtcNow(), encodedSeconds)
+                : null;
+        }
+    }
+
+    /// <summary>
     /// Processes that have ended on their own and whose outcome has not been recorded yet. Reading
     /// them changes nothing; <see cref="ExitRecorded"/> does, once the outcome is safely persisted.
     /// </summary>
@@ -345,5 +375,8 @@ public sealed class ActiveTranscodes(
         public IRunningTranscode? Process { get; set; }
 
         public bool ExitRecorded { get; set; }
+
+        /// <summary>Set when a process is attached; an adopted stream has none, because nothing is converting.</summary>
+        public EncodeSpeed? Speed { get; set; }
     }
 }

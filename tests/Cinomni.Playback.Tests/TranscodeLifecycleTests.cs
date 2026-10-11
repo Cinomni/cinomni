@@ -649,6 +649,58 @@ public sealed class TranscodeLifecycleTests : IAsyncLifetime, IDisposable
 
     // -- helpers ---------------------------------------------------------------------------------
 
+    /// <summary>
+    /// A stream whose encoder stays below real time never fails on its own: the playlist keeps growing,
+    /// only more slowly than the player reads it. The sweep measures it from the playlist, ends it after
+    /// a whole slow window, and the session says why in words the player can show.
+    /// </summary>
+    [Fact]
+    public async Task A_stream_that_cannot_keep_up_is_ended_and_explained_and_one_that_can_is_left_alone()
+    {
+        var viewer = Guid.NewGuid();
+        var slow = await TranscodeAsync(viewer);
+        var steady = await TranscodeAsync(viewer);
+
+        _clock.Advance(EncodeSpeed.WarmUp);
+        WritePlaylist(slow, segments: 2);
+        WritePlaylist(steady, segments: 2);
+        await SweepAsync();
+
+        // A minute later: 30 s of video for the slow one (0.5x), 66 s for the steady one (1.1x).
+        _clock.Advance(EncodeSpeed.Window);
+        WritePlaylist(slow, segments: 7);
+        WritePlaylist(steady, segments: 13);
+        await SweepAsync();
+
+        var ended = await SessionAsync(slow.SessionId);
+        Assert.Equal(PlaybackState.Failed, ended.State);
+        Assert.Equal(PlaybackEndReason.TooSlow, ended.EndReason);
+        Assert.Contains("0.50x real time", Assert.Single(ended.TranscodeJobs).LastError, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(OutputOf(slow)));
+
+        var kept = await SessionAsync(steady.SessionId);
+        Assert.Equal(PlaybackState.Transcoding, kept.State);
+        Assert.Equal(1, Transcodes.Count);
+
+        await using var scope = _provider.CreateAsyncScope();
+        var detail = await scope.ServiceProvider.GetRequiredService<IPlaybackQuery>()
+            .GetSessionAsync(viewer, slow.SessionId);
+        Assert.Equal("playback.too_slow", detail!.Session.Failure!.Code);
+    }
+
+    /// <summary>A playlist as FFmpeg writes it, listing this many six-second segments.</summary>
+    private void WritePlaylist(PlaybackTicket ticket, int segments)
+    {
+        var lines = new List<string> { "#EXTM3U", "#EXT-X-PLAYLIST-TYPE:EVENT", "#EXT-X-TARGETDURATION:6" };
+        for (var i = 0; i < segments; i++)
+        {
+            lines.Add("#EXTINF:6.000000,");
+            lines.Add($"seg_{i:000}.ts");
+        }
+
+        File.WriteAllLines(Path.Combine(OutputOf(ticket), FfmpegCommand.ManifestName), lines);
+    }
+
     private static readonly ClientCapability TranscodingClient = new(["matroska"], ["vp9"], ["aac"], MaxHeight: null);
 
     private static readonly ClientCapability DirectPlayClient = new(["matroska"], ["h264"], ["aac"], MaxHeight: null);

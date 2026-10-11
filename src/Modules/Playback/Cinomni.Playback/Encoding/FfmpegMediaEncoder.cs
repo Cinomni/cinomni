@@ -143,15 +143,26 @@ public sealed class FfmpegMediaEncoder(
     }
 
     /// <summary>
-    /// True once the manifest exists, or once the poll window elapses with the process still
-    /// running — first hardware init can take longer than the poll window, so that case is optimistic
-    /// rather than a failure. False only when FFmpeg is observed to have exited without ever writing
-    /// one: the one signal <see cref="StartHlsAsync"/> treats as this attempt having failed.
+    /// How long a start waits for the first segment. FFmpeg writes the manifest only once that segment is
+    /// complete, and a CPU converting 4K below real time needs well over five seconds to finish a
+    /// six-second one: handing back the ticket sooner sent the player to a playlist that did not exist
+    /// yet, and it gave up on the 404.
+    /// </summary>
+    private static readonly TimeSpan ManifestWait = TimeSpan.FromSeconds(20);
+
+    private static readonly TimeSpan ManifestPoll = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// True once the manifest exists, or once <see cref="ManifestWait"/> elapses with the process still
+    /// running — a first hardware init can take longer still, so that case is optimistic rather than a
+    /// failure. False only when FFmpeg is observed to have exited without ever writing one: the one
+    /// signal <see cref="StartHlsAsync"/> treats as this attempt having failed.
     /// </summary>
     private static async Task<bool> WaitForManifestAsync(
         FfmpegProcess process, string manifestPath, CancellationToken cancellationToken)
     {
-        for (var i = 0; i < 50; i++)
+        var polls = (int)(ManifestWait / ManifestPoll);
+        for (var i = 0; i < polls; i++)
         {
             if (File.Exists(manifestPath))
             {
@@ -164,7 +175,7 @@ public sealed class FfmpegMediaEncoder(
                 return File.Exists(manifestPath);
             }
 
-            await Task.Delay(100, cancellationToken);
+            await Task.Delay(ManifestPoll, cancellationToken);
         }
 
         return true;

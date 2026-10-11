@@ -31,6 +31,11 @@ public static class TranscodingSettingDefinitions
     public static readonly SettingDefinition MaxResolution = Enum(
         "playback.maxResolution", "Playback:Transcoding:MaxResolution", Original, [Original, "2160", "1440", "1080", "720", "480"]);
 
+    public static readonly SettingDefinition SoftwareMaxResolution = Enum(
+        "playback.softwareMaxResolution", "Playback:Transcoding:SoftwareMaxResolution",
+        TranscodingOptions.DefaultSoftwareMaxHeight.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        [Original, "2160", "1440", "1080", "720"]);
+
     public static readonly SettingDefinition MaxBitrateKbps = Number(
         "playback.maxBitrateKbps", "Playback:Transcoding:MaxBitrateKbps", 0, 0, 200_000);
 
@@ -56,7 +61,7 @@ public static class TranscodingSettingDefinitions
 
     public static IReadOnlyList<SettingDefinition> All { get; } =
     [
-        HardwareBackend, HardwareDecoding, OutputCodec, Preset, Quality, MaxResolution, MaxBitrateKbps, Threads,
+        HardwareBackend, HardwareDecoding, OutputCodec, Preset, Quality, MaxResolution, SoftwareMaxResolution, MaxBitrateKbps, Threads,
         ToneMapping, ToneMapAlgorithm, MaxAudioChannels, AudioBitrateKbps, BurnInImageSubtitles,
     ];
 
@@ -87,6 +92,13 @@ public static class TranscodingSettingDefinitions
             },
             Quality = Clamp(view.GetInt(Quality), 15, 40) ?? defaults.Quality,
             MaxHeight = int.TryParse(view.GetString(MaxResolution), out var height) && height > 0 ? height : null,
+            // "original" lifts the ceiling; anything unreadable keeps the default rather than lifting it.
+            SoftwareMaxHeight = view.GetString(SoftwareMaxResolution) switch
+            {
+                Original => null,
+                var value when int.TryParse(value, out var cap) && cap > 0 => cap,
+                _ => defaults.SoftwareMaxHeight,
+            },
             MaxBitrateKbps = view.GetInt(MaxBitrateKbps) is > 0 and var kbps ? Math.Min(kbps, 200_000) : null,
             Threads = Clamp(view.GetInt(Threads), 0, 64) ?? defaults.Threads,
             ToneMapping = view.GetBool(ToneMapping) ?? defaults.ToneMapping,

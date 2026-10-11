@@ -547,6 +547,19 @@ export type PlaybackEndReason =
   | 'TranscodeFailed'
   | 'ServerRestarted'
   | 'Recovered'
+  /** The conversion stayed slower than the video plays. */
+  | 'TooSlow'
+  /** The system killed the conversion, almost always for running out of memory. */
+  | 'ResourceKilled'
+
+/**
+ * Why a session could not play, already worded for the viewer, and what an administrator can change.
+ * Present only for failures the server can explain; the player keeps its own copy otherwise.
+ */
+export interface PlaybackFailureView {
+  code: string
+  message: string
+}
 
 export interface ClientCapability {
   containers: string[]
@@ -672,6 +685,7 @@ export interface PlaybackSessionDetail {
     method: PlaybackMethod
     positionTicks: number
     endReason: PlaybackEndReason | null
+    failure?: PlaybackFailureView | null
   }
   selection: TrackSelection
   plan: PlaybackPlan

@@ -46,7 +46,7 @@ vi.mock('hls.js', () => {
 vi.mock('@/api/endpoints', () => ({
   catalogApi: { get: vi.fn(), episode: vi.fn() },
   libraryApi: { asset: vi.fn() },
-  playbackApi: { start: vi.fn(), progress: vi.fn(), stop: vi.fn(), stopOnUnload: vi.fn() },
+  playbackApi: { start: vi.fn(), progress: vi.fn(), stop: vi.fn(), stopOnUnload: vi.fn(), session: vi.fn() },
 }))
 
 function anAssetDetail(overrides: Partial<MediaAssetDetail> = {}): MediaAssetDetail {
@@ -90,6 +90,8 @@ beforeEach(() => {
   vi.mocked(catalogApi.get).mockResolvedValue(aWork({ id: 'work-1', kind: 'Movie', title: 'A Title' }))
   vi.mocked(playbackApi.progress).mockResolvedValue(undefined)
   vi.mocked(playbackApi.stop).mockResolvedValue(undefined)
+  // A failed stream asks the server why; by default it has nothing to add.
+  vi.mocked(playbackApi.session).mockRejectedValue(new Error('not found'))
 })
 
 describe('PlayerPage headings and controls', () => {
@@ -412,6 +414,39 @@ describe('PlayerPage', () => {
     // Assert
     expect(await screen.findByText('Playback stopped')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+  })
+
+  it('PlayerPage_shows_why_the_server_ended_a_stream_it_could_not_keep_up_with', async () => {
+    // Arrange — the server ended the conversion for running below real time, and says so in words.
+    vi.mocked(playbackApi.start).mockResolvedValue(
+      aTicket({ method: 'Transcode', streamUrl: '/api/playback/sessions/session-1/hls/manifest.m3u8' }),
+    )
+    const explanation = 'The server could not convert this 4K HDR video on its CPU as fast as it plays.'
+    vi.mocked(playbackApi.session).mockResolvedValue({
+      session: {
+        id: 'session-1',
+        userId: 'user-1',
+        assetId: 'asset-1',
+        state: 'Failed',
+        method: 'Transcode',
+        positionTicks: 0,
+        endReason: 'TooSlow',
+        failure: { code: 'playback.too_slow', message: explanation },
+      },
+      selection: { audio: null, subtitle: null },
+      plan: aTicket().plan,
+    })
+    hls.errorHandler = null
+    renderWithProviders(<PlayerPage />)
+    await waitFor(() => expect(hls.errorHandler).not.toBeNull())
+
+    // Act — the playlist is gone, so hls.js gives up after its one reload.
+    act(() => hls.errorHandler?.('hlsError', { fatal: true, type: 'networkError' }))
+    act(() => hls.errorHandler?.('hlsError', { fatal: true, type: 'networkError' }))
+
+    // Assert
+    expect(await screen.findByText(explanation)).toBeInTheDocument()
+    expect(playbackApi.session).toHaveBeenCalledWith('session-1')
   })
 
   it('PlayerPage_tries_to_recover_a_fatal_decode_error_once_before_giving_up', async () => {

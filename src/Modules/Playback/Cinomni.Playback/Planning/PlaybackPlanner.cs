@@ -131,6 +131,8 @@ public sealed class PlaybackPlanner(
                     : "the source is HDR but this FFmpeg build has no tone-mapping filters; colours may look washed out");
         }
 
+        var softwareCap = SoftwareCap(source, selection.Backend, options, decisions, reasons);
+
         var audioChannels = options.MaxAudioChannels is { } channels && source.AudioChannels is { } sourceChannels && sourceChannels > channels
             ? channels
             : (int?)null;
@@ -147,7 +149,7 @@ public sealed class PlaybackPlanner(
             selection.AccelerationReasons,
             selection.DecodeAccelerated,
             TargetMaxWidth: quality?.MaxWidth,
-            TargetMaxHeight: Min(Min(quality?.MaxHeight, resolutionOk ? null : capability.MaxHeight), options.MaxHeight),
+            TargetMaxHeight: Min(Min(Min(quality?.MaxHeight, resolutionOk ? null : capability.MaxHeight), options.MaxHeight), softwareCap),
             TargetBitrateKbps: Min(quality?.MaxBitrateKbps, options.MaxBitrateKbps),
             OutputCodec: codec,
             ToneMapped: toneMap,
@@ -184,6 +186,37 @@ public sealed class PlaybackPlanner(
 
         reasons.Add("converting to HEVC: the client plays it and the hardware encodes it, at a lower bitrate than H.264");
         return VideoOutputCodec.Hevc;
+    }
+
+    /// <summary>
+    /// The ceiling a software transcode is held to, or null. Only a source taller than it is affected,
+    /// and only on the CPU: a 4K HDR file converted there typically runs well under real time on the
+    /// default limits, so it is brought down to a size that plays, and the plan says so and how to lift it.
+    /// </summary>
+    private static int? SoftwareCap(
+        PlaybackSource source,
+        EncoderBackend backend,
+        TranscodingOptions options,
+        List<PlaybackDecision> decisions,
+        List<string> reasons)
+    {
+        if (backend != EncoderBackend.Software
+            || options.SoftwareMaxHeight is not { } cap
+            || source.VideoHeight is not { } height)
+        {
+            return null;
+        }
+
+        var fits = height <= cap;
+        decisions.Add(new PlaybackDecision("softwareMaxHeight", cap.ToString(), height.ToString(), Verdict(fits)));
+        if (fits)
+        {
+            return null;
+        }
+
+        reasons.Add($"converted on the CPU, which is held to {cap} lines so it keeps up with playback "
+            + "(Software encoder maximum resolution); a hardware encoder is not held to it");
+        return cap;
     }
 
     /// <summary>

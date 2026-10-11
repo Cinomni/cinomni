@@ -156,6 +156,11 @@ const SETTING_FIELD_META: Readonly<Record<string, SettingFieldMeta>> = {
     label: 'Maximum resolution',
     hint: 'Anything taller is converted down for every viewer — useful on a weak CPU or a slow uplink.',
   },
+  'playback.softwareMaxResolution': {
+    section: 'Playback',
+    label: 'Software encoder maximum resolution',
+    hint: 'When the CPU converts, taller video is brought down to this so it keeps up with playback. A GPU encoder is not limited by it.',
+  },
   'playback.maxBitrateKbps': {
     section: 'Playback',
     label: 'Maximum bitrate (kbps)',

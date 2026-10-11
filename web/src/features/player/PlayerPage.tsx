@@ -97,13 +97,7 @@ export function PlayerPage() {
             onRetry={retry}
           />
         ) : streamFailed ? (
-          <PlaybackFailure
-            title="Playback stopped"
-            message="Something interrupted this session partway through. Retry to start a new one."
-            backHref={backHref}
-            backLabel={backLabel}
-            onRetry={retry}
-          />
+          <StreamFailure sessionId={ticket.sessionId} backHref={backHref} backLabel={backLabel} onRetry={retry} />
         ) : (
           <VideoStage
             key={ticket.sessionId}
@@ -117,6 +111,42 @@ export function PlayerPage() {
         <SourceOffer />
       </footer>
     </div>
+  )
+}
+
+const STREAM_FAILED_MESSAGE = 'Something interrupted this session partway through. Retry to start a new one.'
+
+/**
+ * A stream that stopped part way. The server may know why — a conversion slower than the video plays,
+ * one the system killed for memory — and then says so in words for the viewer, with what an
+ * administrator can change. Until that answer arrives, or when it has none, the generic copy stands.
+ */
+function StreamFailure({
+  sessionId,
+  backHref,
+  backLabel,
+  onRetry,
+}: {
+  sessionId: string
+  backHref: string
+  backLabel: string
+  onRetry: () => void
+}) {
+  const { data } = useQuery({
+    queryKey: ['playback-session', sessionId],
+    queryFn: () => playbackApi.session(sessionId),
+    retry: false,
+    staleTime: Infinity,
+  })
+
+  return (
+    <PlaybackFailure
+      title="Playback stopped"
+      message={data?.session.failure?.message ?? STREAM_FAILED_MESSAGE}
+      backHref={backHref}
+      backLabel={backLabel}
+      onRetry={onRetry}
+    />
   )
 }
 

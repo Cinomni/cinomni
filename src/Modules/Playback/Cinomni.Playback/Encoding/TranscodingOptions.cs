@@ -60,6 +60,13 @@ public sealed record TranscodingOptions
     /// <summary>The tallest picture any transcode produces; null for no server-wide ceiling.</summary>
     public int? MaxHeight { get; init; }
 
+    /// <summary>
+    /// The tallest picture a <b>software</b> transcode produces; null for no such ceiling. A CPU that
+    /// converts 4K at all rarely converts it as fast as it plays, and a viewer waiting on a stream is
+    /// better served by 1080p that plays than by 2160p that buffers. A hardware backend is not bound by it.
+    /// </summary>
+    public int? SoftwareMaxHeight { get; init; } = DefaultSoftwareMaxHeight;
+
     /// <summary>The highest video bitrate any stream is sent at, in kbps; null for no ceiling.</summary>
     public int? MaxBitrateKbps { get; init; }
 
@@ -81,6 +88,7 @@ public sealed record TranscodingOptions
 
     public const int DefaultQuality = 23;
     public const int DefaultAudioBitrateKbps = 192;
+    public const int DefaultSoftwareMaxHeight = 1080;
 
     public static TranscodingOptions Default { get; } = new();
 

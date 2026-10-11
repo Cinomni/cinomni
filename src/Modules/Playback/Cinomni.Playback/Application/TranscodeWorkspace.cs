@@ -67,6 +67,40 @@ public sealed partial class TranscodeWorkspace(PlaybackOptions options, ILogger<
         }
     }
 
+    /// <summary>
+    /// The most of a playlist that is read to measure it. FFmpeg's own playlist for a long film is a few
+    /// hundred kilobytes; anything past this is not a playlist this module wrote.
+    /// </summary>
+    private const long MaxManifestBytes = 4 * 1024 * 1024;
+
+    /// <summary>
+    /// How many seconds of video the session's playlist lists so far, or null when there is no playlist
+    /// to read yet, or one that is a link, oversized or unreadable. Never throws: it is a measurement
+    /// taken on every sweep, and a missing reading only means nothing is concluded from it.
+    /// </summary>
+    public double? EncodedSeconds(Guid sessionId)
+    {
+        if (Confine(sessionId) is not { } directory)
+        {
+            return null;
+        }
+
+        try
+        {
+            var manifest = new FileInfo(Path.Combine(directory, Encoding.FfmpegCommand.ManifestName));
+            if (!manifest.Exists || manifest.LinkTarget is not null || manifest.Length > MaxManifestBytes)
+            {
+                return null;
+            }
+
+            return HlsPlaylist.EncodedSeconds(File.ReadAllText(manifest.FullName));
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            return null; // mid-rename, or removed under us: the next sweep reads it again
+        }
+    }
+
     /// <summary>Whether the session has an output directory under the root.</summary>
     public bool HasOutput(Guid sessionId) => Confine(sessionId) is { } directory && Directory.Exists(directory);
 

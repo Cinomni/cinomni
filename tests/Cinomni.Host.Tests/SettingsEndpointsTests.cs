@@ -76,7 +76,7 @@ public sealed class SettingsEndpointsTests : IAsyncLifetime
     {
         var settings = await GetSettingsAsync();
 
-        Assert.Equal(31, settings.Count);
+        Assert.Equal(32, settings.Count);
 
         var batchSize = Assert.Single(settings, s => s.Key == "retention.operations.batchSize");
         Assert.Equal("Number", batchSize.Kind);
@@ -113,6 +113,7 @@ public sealed class SettingsEndpointsTests : IAsyncLifetime
             "playback.encoderPreset",
             "playback.videoQuality",
             "playback.maxResolution",
+            "playback.softwareMaxResolution",
             "playback.maxBitrateKbps",
             "playback.encoderThreads",
             "playback.toneMapping",

@@ -16,6 +16,19 @@ under the rules in *Versioning* below.
   twice. Changing it signs out every other device signed in to that account; the one you used stays
   signed in. Until now only the database procedure in DEPLOYMENT.md could change a password.
 
+### Changed
+
+- **A video too heavy for the server now says so instead of buffering for ever.** A conversion that
+  stays slower than the video plays for a whole minute is ended, and the player says why and what an
+  administrator can change: the resolution settings, a hardware encoder, or `CINOMNI_CPUS`. A conversion
+  the system kills for running out of memory says so too, naming `CINOMNI_MEMORY`.
+- **Conversions on the CPU are held to 1080p by default.** A new setting, Console → Settings → Playback →
+  *Software encoder maximum resolution*, brings taller video down when no hardware encoder is used; set it
+  to `original` for the previous behaviour. A hardware encoder is not affected.
+- **Slow starts no longer fail.** Starting a conversion waits up to 20 seconds for its first segment,
+  instead of 5, before handing the stream to the player, so a heavy source no longer fails on a
+  playlist that did not exist yet.
+
 ### Fixed
 
 - **A converted title is no longer marked watched early.** When the server had no runtime for a file,
