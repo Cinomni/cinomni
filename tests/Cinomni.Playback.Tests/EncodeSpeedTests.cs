@@ -116,6 +116,24 @@ public sealed class EncodeSpeedTests
     }
 
     [Fact]
+    public void A_stream_already_held_to_the_software_ceiling_is_explained_as_too_large_to_decode()
+    {
+        // Measured on a real 4K Dolby Vision file: still 0.80x with its output brought down to 1080 lines,
+        // because decoding the full-size source is what the CPU could not keep up with.
+        var session = RunningTranscode(
+            EncoderBackend.Software,
+            new PlaybackDecision("videoHeight", "1080", "2160", "fail"),
+            new PlaybackDecision("softwareMaxHeight", "1080", "2160", "fail"));
+
+        session.FailTooSlow("Converted at 0.80x real time.", Attached);
+        var message = PlaybackFailureExplainer.Explain(session)!.Message;
+
+        Assert.Contains("hardware encoder that decodes it", message, StringComparison.Ordinal);
+        Assert.Contains("CINOMNI_CPUS", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("lower", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_hardware_stream_that_fell_back_to_the_cpu_is_explained_as_the_cpu()
     {
         var session = RunningTranscode(EncoderBackend.Vaapi);
