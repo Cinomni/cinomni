@@ -1,5 +1,6 @@
 using Cinomni.Catalog.Contracts;
 using Cinomni.Library.Contracts;
+using Cinomni.ReleaseParsing.Contracts;
 
 namespace Cinomni.Subtitles.Application;
 
@@ -31,8 +32,17 @@ public sealed record EpisodeContext(
 /// query is built for the <em>first</em> episode the file covers: a provider cannot return one subtitle
 /// spanning two episodes anyway, and the first one is the deterministic choice.
 /// </para>
+/// <para>
+/// A series the catalog holds without its episode tree (no TheTVDB key, or a unit it cannot resolve)
+/// still has its numbering in the file name: <c>Show - S07E08 - Title.mkv</c>. That is read with the
+/// platform's own numbering parser rather than searching as though the file were a film, which matched
+/// every other show's S07E08 and confirmed none.
+/// </para>
 /// </summary>
-public sealed class EpisodeContextResolver(ICatalogQuery catalog, ICatalogSeriesQuery series)
+public sealed class EpisodeContextResolver(
+    ICatalogQuery catalog,
+    ICatalogSeriesQuery series,
+    IEpisodeNumberParser? numberParser = null)
 {
     public async Task<EpisodeContext> ResolveAsync(
         MediaAssetDetail asset,
@@ -54,7 +64,7 @@ public sealed class EpisodeContextResolver(ICatalogQuery catalog, ICatalogSeries
         if (work.Kind != WorkKind.Series || unitIds.Count == 0 || unitIds.All(id => id == asset.Asset.WorkId))
         {
             return work.Kind == WorkKind.Series
-                ? EpisodeContext.None
+                ? FromFileName(work.Title, imdbId, asset)
                 : new EpisodeContext(null, null, null, null, work.Title, work.Year, imdbId);
         }
 
@@ -71,10 +81,24 @@ public sealed class EpisodeContextResolver(ICatalogQuery catalog, ICatalogSeries
 
         var first = episodes.OrderBy(e => e.SeasonNumber).ThenBy(e => e.Number).FirstOrDefault();
 
-        // A series asset whose units resolve to no episode (a season unit, or a stale link): the series
-        // title still beats the release name as a search term, but nothing pins an episode.
-        return first is null
-            ? new EpisodeContext(work.Title, null, null, parentImdbId)
-            : new EpisodeContext(work.Title, first.SeasonNumber, first.Number, parentImdbId);
+        if (first is not null)
+        {
+            return new EpisodeContext(work.Title, first.SeasonNumber, first.Number, parentImdbId);
+        }
+
+        // A series asset whose units resolve to no episode: the series title still beats the release
+        // name as a search term, and the file name may still say which episode it is.
+        return FromFileName(work.Title, parentImdbId, asset);
+    }
+
+    private EpisodeContext FromFileName(string seriesTitle, string? seriesImdbId, MediaAssetDetail asset)
+    {
+        var version = asset.Versions.FirstOrDefault(v => v.Id == asset.Asset.PrimaryVersionId) ?? asset.Versions.FirstOrDefault();
+        var numbering = version is null || numberParser is null
+            ? null
+            : numberParser.Parse(Path.GetFileNameWithoutExtension(version.FullPath));
+        return numbering is { Season: { } season, Episodes: [var number, ..] }
+            ? new EpisodeContext(seriesTitle, season, number, seriesImdbId)
+            : new EpisodeContext(seriesTitle, null, null, seriesImdbId);
     }
 }
