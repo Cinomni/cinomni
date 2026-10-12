@@ -9,19 +9,11 @@ namespace Cinomni.Playback.Application;
 /// </summary>
 public static class PlaybackTracks
 {
-    /// <summary>Subtitle codecs that are text, which a browser can show once converted to WebVTT.</summary>
-    private static readonly HashSet<string> TextSubtitleCodecs = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text",
-    };
-
     /// <summary>
     /// Whether a subtitle stream can be shown as text. A sidecar Subtitles fetched always is (SubRip, ASS
     /// or WebVTT); an embedded one is when its codec is text — PGS and VobSub are pictures.
     /// </summary>
-    public static bool CanDisplay(MediaStreamSummary stream) =>
-        stream.Type == MediaStreamType.Subtitle
-        && (stream.IsExternal || (stream.Codec is { } codec && TextSubtitleCodecs.Contains(codec)));
+    public static bool CanDisplay(MediaStreamSummary stream) => SubtitleStreams.IsText(stream);
 
     public static IReadOnlyList<AudioTrackView> Audio(MediaVersionSummary version) =>
         version.Streams

@@ -16,6 +16,9 @@ namespace Cinomni.Subtitles.Providers;
 /// </summary>
 /// <param name="SeriesTitle">The catalog title of the series (the search term a provider matches shows on).</param>
 /// <param name="ParentImdbId">The <em>series</em> IMDb id, when the catalog knows one — the strongest key a provider offers.</param>
+/// <param name="Title">For a movie, its catalog title: what a candidate's own title is compared with.</param>
+/// <param name="Year">For a movie, its catalog year.</param>
+/// <param name="ImdbId">For a movie, its IMDb id when the catalog knows one: a search key, and proof of identity.</param>
 public sealed record SubtitleProviderQuery(
     string Release,
     string Language,
@@ -24,20 +27,27 @@ public sealed record SubtitleProviderQuery(
     int? SeasonNumber = null,
     int? EpisodeNumber = null,
     string? ParentImdbId = null,
-    bool Forced = false)
+    bool Forced = false,
+    string? Title = null,
+    int? Year = null,
+    string? ImdbId = null)
 {
     /// <summary>Whether this query is scoped to one episode (both numbers known), rather than a movie.</summary>
     public bool IsEpisode => SeasonNumber is not null && EpisodeNumber is not null;
 }
 
-/// <summary>A scored candidate a provider returned, with an opaque handle to download it.</summary>
+/// <summary>
+/// A scored candidate a provider returned, with an opaque handle to download it and, in a sentence, why
+/// it scored what it did (<see cref="SubtitleCandidateScorer"/>).
+/// </summary>
 public sealed record ProviderCandidate(
     string Release,
     int Score,
     bool HearingImpaired,
     SubtitleFormat Format,
     string DownloadRef,
-    bool Forced = false);
+    bool Forced = false,
+    string Reason = "");
 
 /// <summary>The downloaded subtitle content and its format.</summary>
 public sealed record ProviderDownload(byte[] Content, SubtitleFormat Format);

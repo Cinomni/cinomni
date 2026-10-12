@@ -136,17 +136,11 @@ internal static class SubdlSubtitleParser
         var forced = (file.TryGetProperty("forced", out var flag) && flag.ValueKind == JsonValueKind.True)
             || HasToken(name, "forced")
             || HasToken(String(file, "release_name"), "forced");
-        return new ProviderCandidate(release, ScoreOf(release, query.Release), hearingImpaired, format.Value, url!, forced);
-    }
-
-    private static int ScoreOf(string release, string wanted)
-    {
-        if (string.IsNullOrWhiteSpace(release) || string.IsNullOrWhiteSpace(wanted))
-        {
-            return 40;
-        }
-
-        return release.Contains(wanted, StringComparison.OrdinalIgnoreCase) ? 70 : 40;
+        // SubDL files carry no title of their own: the release name and the numbering it lists are the evidence.
+        var scored = SubtitleCandidateScorer.Score(
+            query,
+            new CandidateEvidence(release, Season: Int(file, "season"), Episode: Int(file, "episode")));
+        return new ProviderCandidate(release, scored.Score, hearingImpaired, format.Value, url!, forced, scored.Reason);
     }
 
     /// <summary>

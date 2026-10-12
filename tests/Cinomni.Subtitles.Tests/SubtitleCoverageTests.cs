@@ -14,6 +14,29 @@ public sealed class SubtitleCoverageTests
         Assert.False(SubtitleCoverage.IsSatisfied("es", false, false, present));
     }
 
+    [Theory]
+    [InlineData("en", "eng")]
+    [InlineData("de", "ger")]
+    [InlineData("de", "deu")]
+    [InlineData("pt", "POR")]
+    [InlineData("en", "en")]
+    public void An_embedded_track_tagged_in_three_letters_satisfies_the_two_letter_preference(string wanted, string tagged)
+    {
+        // Containers tag tracks in ISO 639-2; compared literally, no embedded subtitle ever counted.
+        var present = new[] { (tagged, false, false) };
+
+        Assert.True(SubtitleCoverage.IsSatisfied(wanted, false, false, present));
+    }
+
+    [Theory]
+    [InlineData("en", "spa")]
+    [InlineData("en", "")]
+    [InlineData("es", "eng")]
+    public void A_track_in_another_language_does_not(string wanted, string tagged)
+    {
+        Assert.False(SubtitleCoverage.IsSatisfied(wanted, false, false, [(tagged, false, false)]));
+    }
+
     [Fact]
     public void The_stamp_ignores_language_order()
     {

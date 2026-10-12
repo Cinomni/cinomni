@@ -55,12 +55,13 @@ public sealed record SubtitleSearchSummary(
     int Attempts,
     Guid? SubtitleId = null);
 
-/// <summary>Projection of one scored candidate found for a search.</summary>
+/// <summary>Projection of one scored candidate found for a search, with why it scored what it did.</summary>
 public sealed record SubtitleCandidateSummary(
     string Provider,
     string Release,
     int Score,
-    bool HearingImpaired);
+    bool HearingImpaired,
+    string Reason = "");
 
 /// <summary>
 /// What a synchronization pass decided about a subtitle's timing. Only <see cref="Applied"/> changes

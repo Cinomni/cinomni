@@ -71,6 +71,8 @@ public sealed class OpenSubtitlesProvider(
     private HttpRequestMessage ApiRequest(HttpMethod method, string uri)
     {
         var request = new HttpRequestMessage(method, uri);
+        // Required, not a courtesy: without it the API answers POST download with its HTML 503 page.
+        request.Headers.Accept.ParseAdd("application/json");
         if (!string.IsNullOrEmpty(options.ApiKey))
         {
             request.Headers.Add("Api-Key", options.ApiKey);
@@ -84,31 +86,56 @@ public sealed class OpenSubtitlesProvider(
     /// title and the episode is pinned with <c>season_number</c>/<c>episode_number</c> (plus
     /// <c>parent_imdb_id</c> when the catalog knows one): the API narrows on those, whereas a full release
     /// name as <c>query</c> is matched loosely and returns the same broad set for every episode of a show.
-    /// A movie keeps the previous behaviour exactly — the release name as the query and nothing else.
-    /// Every value goes through <see cref="Uri.EscapeDataString"/>; the numbers are formatted invariantly.
+    /// A movie is searched by its IMDb id when the catalog knows one, else by its catalog title and year
+    /// as one search text,
+    /// and only as a last resort by the release name — which matched another film on a shared group tag.
+    /// <para>
+    /// The address has to be the API's one canonical form, or it answers 301 with that form instead —
+    /// and this client follows no redirect, so any other spelling is a failed search. Canonical means the
+    /// parameters in alphabetical order, every value lowercased before it is escaped, a space as
+    /// <c>+</c>, and an IMDb id as the bare number without <c>tt</c> or leading zeros.
+    /// </para>
     /// </summary>
     private static string BuildSearchUri(SubtitleProviderQuery query)
     {
-        var term = query.IsEpisode && !string.IsNullOrWhiteSpace(query.SeriesTitle) ? query.SeriesTitle! : query.Release;
-        var uri = $"subtitles?query={Uri.EscapeDataString(term)}&languages={Uri.EscapeDataString(query.Language)}";
-
-        if (query.SeasonNumber is { } season)
+        var parameters = new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            uri += $"&season_number={Uri.EscapeDataString(season.ToString(CultureInfo.InvariantCulture))}";
+            ["languages"] = query.Language,
+        };
+
+        if (query.IsEpisode)
+        {
+            parameters["query"] = string.IsNullOrWhiteSpace(query.SeriesTitle) ? query.Release : query.SeriesTitle;
+            parameters["season_number"] = query.SeasonNumber!.Value.ToString(CultureInfo.InvariantCulture);
+            parameters["episode_number"] = query.EpisodeNumber!.Value.ToString(CultureInfo.InvariantCulture);
+            if (SubtitleCandidateScorer.ImdbNumber(query.ParentImdbId) is { } series)
+            {
+                parameters["parent_imdb_id"] = series;
+            }
+        }
+        else if (SubtitleCandidateScorer.ImdbNumber(query.ImdbId) is { } film)
+        {
+            parameters["imdb_id"] = film;
+        }
+        else if (!string.IsNullOrWhiteSpace(query.Title))
+        {
+            // The year goes in the text, not in the API's year filter: measured against the live API,
+            // "28 days later" with year=2002 found nothing, the bare title found other works, and
+            // "28 days later 2002" found the film's 46 subtitles. The scorer checks the year itself.
+            parameters["query"] = query.Year is { } year
+                ? string.Create(CultureInfo.InvariantCulture, $"{query.Title} {year}")
+                : query.Title;
+        }
+        else
+        {
+            parameters["query"] = query.Release;
         }
 
-        if (query.EpisodeNumber is { } episode)
-        {
-            uri += $"&episode_number={Uri.EscapeDataString(episode.ToString(CultureInfo.InvariantCulture))}";
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.ParentImdbId))
-        {
-            uri += $"&parent_imdb_id={Uri.EscapeDataString(query.ParentImdbId)}";
-        }
-
-        return uri;
+        return "subtitles?" + string.Join('&', parameters.Select(p => $"{p.Key}={CanonicalValue(p.Value)}"));
     }
+
+    private static string CanonicalValue(string value) =>
+        Uri.EscapeDataString(value.ToLowerInvariant()).Replace("%20", "+", StringComparison.Ordinal);
 
     private IReadOnlyList<ProviderCandidate> Parse(JsonDocument document, SubtitleProviderQuery query)
     {
@@ -128,22 +155,65 @@ public sealed class OpenSubtitlesProvider(
             var release = GetString(attributes, "release") ?? query.Release;
             var hearingImpaired = attributes.TryGetProperty("hearing_impaired", out var hi) && hi.ValueKind == JsonValueKind.True;
             var forced = attributes.TryGetProperty("foreign_parts_only", out var foreign) && foreign.ValueKind == JsonValueKind.True;
-            var score = ScoreOf(attributes);
             var fileId = FirstFileId(attributes);
             if (fileId is not null)
             {
-                candidates.Add(new ProviderCandidate(release, score, hearingImpaired, SubtitleFormat.Srt, fileId, forced));
+                var scored = SubtitleCandidateScorer.Score(query, Evidence(attributes, release));
+                candidates.Add(new ProviderCandidate(release, scored.Score, hearingImpaired, SubtitleFormat.Srt, fileId, forced, scored.Reason));
             }
         }
 
         return candidates;
     }
 
-    private static int ScoreOf(JsonElement attributes)
+    /// <summary>
+    /// What the API publishes about the file beside its name: the title it was filed under — a film, or
+    /// an episode with its series — and how it was made. Read defensively: any field may be missing or
+    /// of another type, and then it simply says nothing.
+    /// </summary>
+    private static CandidateEvidence Evidence(JsonElement attributes, string release)
     {
-        var rating = attributes.TryGetProperty("ratings", out var r) && r.TryGetDouble(out var value) ? value : 0;
-        return (int)Math.Round(Math.Clamp(rating, 0, 10) * 10);
+        var details = attributes.TryGetProperty("feature_details", out var feature) && feature.ValueKind == JsonValueKind.Object
+            ? feature
+            : default;
+        var isEpisode = details.ValueKind == JsonValueKind.Object
+            && string.Equals(GetString(details, "feature_type"), "Episode", StringComparison.OrdinalIgnoreCase);
+        var machine = IsTrue(attributes, "machine_translated") || IsTrue(attributes, "ai_translated");
+        var downloads = GetInt(attributes, "download_count") ?? 0;
+
+        if (details.ValueKind != JsonValueKind.Object)
+        {
+            return new CandidateEvidence(release, DownloadCount: downloads, Trusted: IsTrue(attributes, "from_trusted"), MachineTranslated: machine);
+        }
+
+        return isEpisode
+            ? new CandidateEvidence(
+                release,
+                Title: GetString(details, "parent_title"),
+                ImdbId: GetInt(details, "imdb_id")?.ToString(CultureInfo.InvariantCulture),
+                ParentImdbId: GetInt(details, "parent_imdb_id")?.ToString(CultureInfo.InvariantCulture),
+                Season: GetInt(details, "season_number"),
+                Episode: GetInt(details, "episode_number"),
+                DownloadCount: downloads,
+                Trusted: IsTrue(attributes, "from_trusted"),
+                MachineTranslated: machine)
+            : new CandidateEvidence(
+                release,
+                Title: GetString(details, "title"),
+                Year: GetInt(details, "year") is { } year and > 1800 ? year : null,
+                ImdbId: GetInt(details, "imdb_id")?.ToString(CultureInfo.InvariantCulture),
+                DownloadCount: downloads,
+                Trusted: IsTrue(attributes, "from_trusted"),
+                MachineTranslated: machine);
     }
+
+    private static bool IsTrue(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+
+    private static int? GetInt(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
+            ? number
+            : null;
 
     private static string? FirstFileId(JsonElement attributes)
     {

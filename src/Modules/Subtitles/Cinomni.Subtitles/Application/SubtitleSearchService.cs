@@ -35,6 +35,12 @@ public sealed class SubtitleSearchService(
     ILiveOptions<SubtitlePreference>? preference = null,
     SubtitleSyncOptions? syncOptions = null) : ISubtitleSearch
 {
+    /// <summary>
+    /// How many candidates one search may download before giving up until its next attempt. Each one
+    /// spends a provider's daily download quota, so the bound is small.
+    /// </summary>
+    public const int MaxDownloadsPerSearch = 3;
+
     private sealed record Scored(ISubtitleProvider Provider, ProviderCandidate Candidate);
 
     public async Task SearchForAssetAsync(Guid assetId, CancellationToken cancellationToken = default)
@@ -73,15 +79,31 @@ public sealed class SubtitleSearchService(
     private async Task RecordAlreadyPresentAsync(
         Guid assetId, string language, SubtitlePreference wanted, CancellationToken cancellationToken)
     {
-        var exists = await dbContext.Searches.AnyAsync(
+        var existing = await dbContext.Searches.FirstOrDefaultAsync(
             s => s.AssetId == assetId && s.Language == language && s.Forced == wanted.Forced && s.HearingImpaired == wanted.HearingImpaired,
             cancellationToken);
-        if (exists)
+        var now = DateTimeOffset.UtcNow;
+        if (existing is not null)
         {
+            // A search left NotFound for a subtitle the file turns out to carry is closed as covered, so the
+            // catch-up stops returning to it. Any other row is the record of a search that ran: left alone.
+            if (existing.State == SubtitleSearchState.NotFound)
+            {
+                existing.MarkAlreadyPresent(now);
+                try
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    // Another pass moved it first; whatever it recorded stands.
+                    dbContext.ChangeTracker.Clear();
+                }
+            }
+
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
         var search = SubtitleSearch.Create(assetId, language, wanted.Forced, wanted.HearingImpaired, now);
         search.MarkAlreadyPresent(now);
         dbContext.Searches.Add(search);
@@ -144,16 +166,20 @@ public sealed class SubtitleSearchService(
 
         var scored = await QueryProvidersAsync(release, language, episode, wanted, cancellationToken);
         search.RecordCandidates(
-            scored.Select(s => (s.Provider.Name, s.Candidate.Release, s.Candidate.Score, s.Candidate.HearingImpaired, s.Candidate.DownloadRef)),
+            scored.Select(s => (s.Provider.Name, s.Candidate.Release, s.Candidate.Score, s.Candidate.HearingImpaired, s.Candidate.DownloadRef, s.Candidate.Reason)),
             now);
         var added = search.Candidates.Skip(before).ToList();
 
         var events = new List<IDomainEvent> { new SubtitleSearchRequested(search.Id, search.AssetId, language) };
-        var best = scored
+        // Best first, and more than one: a file can turn out not to be what it was labelled, or fail to
+        // download, and the next good candidate is a better outcome than waiting hours to search again.
+        var ranked = scored
             .Where(s => s.Candidate.Score >= options.MinScore)
             .Where(s => s.Candidate.HearingImpaired == wanted.HearingImpaired && s.Candidate.Forced == wanted.Forced)
-            .MaxBy(s => s.Candidate.Score);
-        if (best is null)
+            .OrderByDescending(s => s.Candidate.Score)
+            .Take(MaxDownloadsPerSearch)
+            .ToList();
+        if (ranked.Count == 0)
         {
             search.MarkNotFound(now);
             events.Add(new SubtitleSearchFailed(search.Id, search.AssetId, language, search.Attempts));
@@ -162,28 +188,41 @@ public sealed class SubtitleSearchService(
         }
 
         search.BeginDownload(now);
-        try
+        foreach (var choice in ranked)
         {
-            var download = await best.Provider.DownloadAsync(best.Candidate.DownloadRef, cancellationToken);
-            var path = await fileStore.WriteAsync(
-                videoPath, language, wanted.Forced, wanted.HearingImpaired, download.Format, download.Content, cancellationToken);
+            try
+            {
+                var download = await choice.Provider.DownloadAsync(choice.Candidate.DownloadRef, cancellationToken);
+                if (!SubtitleLanguageCheck.IsPlausible(language, SubtitleTextDecoder.Decode(download.Content)))
+                {
+                    logger.LogWarning(
+                        "Subtitle '{Release}' from {Provider} for asset {AssetId} is not written in the alphabet of {Language}; trying the next candidate.",
+                        choice.Candidate.Release, choice.Provider.Name, search.AssetId, language);
+                    continue;
+                }
 
-            var subtitleAsset = SubtitleAsset.Create(
-                search.AssetId, search.Id, language, wanted.Forced, wanted.HearingImpaired,
-                download.Format, path, best.Provider.Name, best.Candidate.Score, now);
-            var landing = Land(search, subtitleAsset, now);
-            events.Add(new SubtitleAvailable(subtitleAsset.Id, search.AssetId, language, wanted.Forced, wanted.HearingImpaired, path));
-            await PersistAsync(search, isNew, added, subtitleAsset, events, cancellationToken, landing);
+                var path = await fileStore.WriteAsync(
+                    videoPath, language, wanted.Forced, wanted.HearingImpaired, download.Format, download.Content, cancellationToken);
+
+                var subtitleAsset = SubtitleAsset.Create(
+                    search.AssetId, search.Id, language, wanted.Forced, wanted.HearingImpaired,
+                    download.Format, path, choice.Provider.Name, choice.Candidate.Score, now);
+                var landing = Land(search, subtitleAsset, now);
+                events.Add(new SubtitleAvailable(subtitleAsset.Id, search.AssetId, language, wanted.Forced, wanted.HearingImpaired, path));
+                await PersistAsync(search, isNew, added, subtitleAsset, events, cancellationToken, landing);
+                return;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException)
+            {
+                logger.LogWarning(ex, "Subtitle download/write failed for asset {AssetId} ({Language}).", search.AssetId, language);
+            }
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException)
-        {
-            // The file did not land. Record NotFound so the same backoff that reopens an empty search
-            // reopens this one. Leaving it Downloading, or recording nothing, spends the retry key.
-            logger.LogWarning(ex, "Subtitle download/write failed for asset {AssetId} ({Language}).", search.AssetId, language);
-            search.MarkNotFound(now);
-            events.Add(new SubtitleSearchFailed(search.Id, search.AssetId, language, search.Attempts));
-            await PersistAsync(search, isNew, added, subtitleAsset: null, events, cancellationToken);
-        }
+
+        // Nothing landed. Record NotFound so the same backoff that reopens an empty search reopens this
+        // one. Leaving it Downloading, or recording nothing, spends the retry key.
+        search.MarkNotFound(now);
+        events.Add(new SubtitleSearchFailed(search.Id, search.AssetId, language, search.Attempts));
+        await PersistAsync(search, isNew, added, subtitleAsset: null, events, cancellationToken);
     }
 
     private async Task<IReadOnlyList<Scored>> QueryProvidersAsync(
@@ -201,7 +240,10 @@ public sealed class SubtitleSearchService(
             episode.SeasonNumber,
             episode.EpisodeNumber,
             episode.ParentImdbId,
-            wanted.Forced);
+            wanted.Forced,
+            episode.MovieTitle,
+            episode.MovieYear,
+            episode.MovieImdbId);
 
         var results = new List<Scored>();
 
@@ -231,7 +273,10 @@ public sealed class SubtitleSearchService(
         CancellationToken cancellationToken)
     {
         var present = new List<(string Language, bool Forced, bool HearingImpaired)>();
-        foreach (var stream in version.Streams.Where(s => s.Type == MediaStreamType.Subtitle && s.Language is not null))
+
+        // Only a text track covers a language. A picture one (PGS, VobSub) is shown only by burning it into
+        // the video, a full re-encode that a 4K file cannot get in real time; a text sidecar plays directly.
+        foreach (var stream in version.Streams.Where(s => SubtitleStreams.IsText(s) && s.Language is not null))
         {
             // An embedded track carries forced, not hearing-impaired. It must not satisfy an HI request.
             present.Add((stream.Language!, stream.IsForced, false));

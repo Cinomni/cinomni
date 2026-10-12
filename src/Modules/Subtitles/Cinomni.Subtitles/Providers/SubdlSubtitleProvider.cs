@@ -81,13 +81,22 @@ public sealed class SubdlSubtitleProvider(
         var language = query.Language.Length == 2
             ? query.Language.ToUpperInvariant()
             : query.Language;
-        var term = query.IsEpisode && !string.IsNullOrWhiteSpace(query.SeriesTitle) ? query.SeriesTitle! : query.Release;
+        // The catalog's title, not the release name: a release name carries group and quality tags that a
+        // title search matches against other films.
+        var title = query.IsEpisode ? query.SeriesTitle : query.Title;
+        var term = string.IsNullOrWhiteSpace(title) ? query.Release : title;
+        var imdb = SubtitleCandidateScorer.ImdbNumber(query.IsEpisode ? query.ParentImdbId : query.ImdbId);
         var type = query.IsEpisode ? "tv" : "movie";
         var uri = "subtitles?api_key=" + Uri.EscapeDataString(options.ApiKey)
             + "&film_name=" + Uri.EscapeDataString(term)
             + "&type=" + type
             + "&languages=" + Uri.EscapeDataString(language)
             + "&hi=1&unpack=1&subs_per_page=10";
+
+        if (imdb is not null)
+        {
+            uri += "&imdb_id=tt" + imdb;
+        }
 
         if (query.SeasonNumber is { } season)
         {

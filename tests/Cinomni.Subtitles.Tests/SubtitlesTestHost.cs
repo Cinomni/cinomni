@@ -1,3 +1,5 @@
+using Cinomni.ReleaseParsing.Contracts;
+using Cinomni.ReleaseParsing.Parsing;
 using Cinomni.Catalog;
 using Cinomni.Catalog.Persistence;
 using Cinomni.Library;
@@ -41,6 +43,9 @@ internal static class SubtitlesTestHost
         services.AddLibraryModule();
         services.AddCatalogModule();
         services.AddSubtitlesModule();
+
+        // The Host registers ReleaseParsing's numbering parser for every module; Subtitles reads file names with it.
+        services.AddSingleton<IEpisodeNumberParser, EpisodeNumberParser>();
 
         // The default profile disables the provider stagger: only the test that asserts it wants to pay
         // for it, and everything else would otherwise sit in a real two-second delay per search.

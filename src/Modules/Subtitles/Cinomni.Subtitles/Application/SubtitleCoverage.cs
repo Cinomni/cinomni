@@ -1,6 +1,10 @@
 namespace Cinomni.Subtitles.Application;
 
-/// <summary>Whether one wanted subtitle is already on the asset, embedded or downloaded.</summary>
+/// <summary>
+/// Whether one wanted subtitle is already on the asset, embedded or downloaded. The preference names a
+/// language in two letters (<c>en</c>) and a container tags its tracks in three (<c>eng</c>): compared
+/// literally, no embedded subtitle ever counted, and every title was searched for one it already had.
+/// </summary>
 public static class SubtitleCoverage
 {
     public static bool IsSatisfied(
@@ -9,7 +13,7 @@ public static class SubtitleCoverage
         bool hearingImpaired,
         IEnumerable<(string Language, bool Forced, bool HearingImpaired)> present) =>
         present.Any(item =>
-            string.Equals(item.Language, language, StringComparison.OrdinalIgnoreCase)
+            LanguageCodes.SameLanguage(language, item.Language)
             && item.Forced == forced
             && item.HearingImpaired == hearingImpaired);
 

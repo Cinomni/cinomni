@@ -11,8 +11,8 @@ public sealed class SubtitleSearchFsmTests
     private static SubtitleSearch NewSearch() =>
         SubtitleSearch.Create(Guid.NewGuid(), "en", forced: false, hearingImpaired: false, Now);
 
-    private static readonly (string, string, int, bool, string)[] Candidates =
-        [("fake", "Movie.2024", 90, false, "file-1")];
+    private static readonly (string, string, int, bool, string, string)[] Candidates =
+        [("fake", "Movie.2024", 90, false, "file-1", "Same film by title.")];
 
     [Fact]
     public void Create_starts_requested()
@@ -137,6 +137,27 @@ public sealed class SubtitleSearchFsmTests
 
         Assert.Throws<InvalidOperationException>(() => search.BeginResync(Now));
         Assert.Equal(SubtitleSearchState.Available, search.State);
+    }
+
+    [Fact]
+    public void A_search_that_found_nothing_is_closed_as_covered_once_the_file_is_seen_to_carry_the_language()
+    {
+        var search = NewSearch();
+        search.BeginSearch(Now);
+        search.MarkNotFound(Now);
+
+        search.MarkAlreadyPresent(Now);
+
+        Assert.Equal(SubtitleSearchState.Available, search.State);
+    }
+
+    [Fact]
+    public void A_search_in_flight_is_not_closed_as_covered()
+    {
+        var downloading = Downloading();
+
+        Assert.Throws<InvalidOperationException>(() => downloading.MarkAlreadyPresent(Now));
+        Assert.Equal(SubtitleSearchState.Downloading, downloading.State);
     }
 
     private static SubtitleSearch Downloading()

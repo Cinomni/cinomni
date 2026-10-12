@@ -8,6 +8,7 @@ public sealed class SubtitleCandidate
 {
     private const int TextMaxLength = 200;
     private const int RefMaxLength = 500;
+    public const int ReasonMaxLength = 300;
 
     public Guid SearchId { get; init; }
 
@@ -23,8 +24,11 @@ public sealed class SubtitleCandidate
 
     public required string DownloadRef { get; init; }
 
+    /// <summary>Why the candidate scored what it did, in a sentence (<c>SubtitleCandidateScorer</c>).</summary>
+    public string Reason { get; init; } = string.Empty;
+
     public static SubtitleCandidate Create(
-        Guid searchId, int seq, string provider, string release, int score, bool hearingImpaired, string downloadRef) => new()
+        Guid searchId, int seq, string provider, string release, int score, bool hearingImpaired, string downloadRef, string reason = "") => new()
     {
         SearchId = searchId,
         Seq = seq,
@@ -33,5 +37,6 @@ public sealed class SubtitleCandidate
         Score = score,
         HearingImpaired = hearingImpaired,
         DownloadRef = Text.Truncate(downloadRef, RefMaxLength)!,
+        Reason = Text.Truncate(reason, ReasonMaxLength) ?? string.Empty,
     };
 }

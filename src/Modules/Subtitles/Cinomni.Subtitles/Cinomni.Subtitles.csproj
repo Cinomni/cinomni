@@ -22,6 +22,7 @@
          stem and lives in its directory, so a video that moves takes its subtitles with it and the
          stored paths have to follow. Contracts-only. -->
     <ProjectReference Include="..\..\Import\Cinomni.Import.Contracts\Cinomni.Import.Contracts.csproj" />
+    <ProjectReference Include="..\..\ReleaseParsing\Cinomni.ReleaseParsing.Contracts\Cinomni.ReleaseParsing.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Platform\Cinomni.Kernel\Cinomni.Kernel.csproj" />
     <ProjectReference Include="..\..\..\Platform\Cinomni.Operations\Cinomni.Operations.csproj" />
   </ItemGroup>
