@@ -146,10 +146,12 @@ public sealed class SubtitleSearch
     /// Requested → Available without a search: the asset already carries this subtitle — a track in the
     /// file, or one downloaded before. Recording it is what lets the catch-up count the language as
     /// covered; with no row it was "missing" on every pass and never let the backlog behind it through.
+    /// NotFound → Available is the same finding made late: a search that ran only because an embedded
+    /// track tagged <c>eng</c> was not recognised as the <c>en</c> wanted, closed now that it is.
     /// </summary>
     public void MarkAlreadyPresent(DateTimeOffset now)
     {
-        Require(SubtitleSearchState.Requested);
+        Require(SubtitleSearchState.Requested, SubtitleSearchState.NotFound);
         Transition(SubtitleSearchState.Available, now);
     }
 
