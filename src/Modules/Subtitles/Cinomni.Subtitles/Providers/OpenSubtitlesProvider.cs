@@ -85,29 +85,62 @@ public sealed class OpenSubtitlesProvider(
     /// <c>parent_imdb_id</c> when the catalog knows one): the API narrows on those, whereas a full release
     /// name as <c>query</c> is matched loosely and returns the same broad set for every episode of a show.
     /// A movie keeps the previous behaviour exactly — the release name as the query and nothing else.
-    /// Every value goes through <see cref="Uri.EscapeDataString"/>; the numbers are formatted invariantly.
+    /// <para>
+    /// The address has to be the API's one canonical form, or it answers 301 with that form instead —
+    /// and this client follows no redirect, so any other spelling is a failed search. Canonical means the
+    /// parameters in alphabetical order, every value lowercased before it is escaped, a space as
+    /// <c>+</c>, and an IMDb id as the bare number without <c>tt</c> or leading zeros.
+    /// </para>
     /// </summary>
     private static string BuildSearchUri(SubtitleProviderQuery query)
     {
         var term = query.IsEpisode && !string.IsNullOrWhiteSpace(query.SeriesTitle) ? query.SeriesTitle! : query.Release;
-        var uri = $"subtitles?query={Uri.EscapeDataString(term)}&languages={Uri.EscapeDataString(query.Language)}";
+        var parameters = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["languages"] = query.Language,
+            ["query"] = term,
+        };
 
         if (query.SeasonNumber is { } season)
         {
-            uri += $"&season_number={Uri.EscapeDataString(season.ToString(CultureInfo.InvariantCulture))}";
+            parameters["season_number"] = season.ToString(CultureInfo.InvariantCulture);
         }
 
         if (query.EpisodeNumber is { } episode)
         {
-            uri += $"&episode_number={Uri.EscapeDataString(episode.ToString(CultureInfo.InvariantCulture))}";
+            parameters["episode_number"] = episode.ToString(CultureInfo.InvariantCulture);
         }
 
-        if (!string.IsNullOrWhiteSpace(query.ParentImdbId))
+        if (ImdbNumber(query.ParentImdbId) is { } imdb)
         {
-            uri += $"&parent_imdb_id={Uri.EscapeDataString(query.ParentImdbId)}";
+            parameters["parent_imdb_id"] = imdb;
         }
 
-        return uri;
+        return "subtitles?" + string.Join('&', parameters.Select(p => $"{p.Key}={CanonicalValue(p.Value)}"));
+    }
+
+    private static string CanonicalValue(string value) =>
+        Uri.EscapeDataString(value.ToLowerInvariant()).Replace("%20", "+", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The number in a title id such as <c>tt0898266</c>, or <c>null</c> for anything that is not one —
+    /// a person id, an empty value, or text that would otherwise reach the query.
+    /// </summary>
+    private static string? ImdbNumber(string? imdbId)
+    {
+        if (string.IsNullOrWhiteSpace(imdbId))
+        {
+            return null;
+        }
+
+        var digits = imdbId.StartsWith("tt", StringComparison.OrdinalIgnoreCase) ? imdbId[2..] : imdbId;
+        if (digits.Length == 0 || !digits.All(char.IsAsciiDigit))
+        {
+            return null;
+        }
+
+        var number = digits.TrimStart('0');
+        return number.Length == 0 ? null : number;
     }
 
     private IReadOnlyList<ProviderCandidate> Parse(JsonDocument document, SubtitleProviderQuery query)
