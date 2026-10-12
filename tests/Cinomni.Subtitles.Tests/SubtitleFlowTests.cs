@@ -40,6 +40,11 @@ public sealed class SubtitleFlowTests : IAsyncLifetime
         Assert.Equal(SubtitleSearchState.Available, search.State);
         Assert.Contains(_fileStore.Written, w => w.Language == "en" && w.VideoPath == MoviePath);
 
+        // The provider was told which film it is, from the catalog, so a candidate's identity can be checked.
+        var query = Assert.Single(_provider.Searches);
+        Assert.Equal(("The Matrix", 1999), (query.Title, query.Year));
+        Assert.False(query.IsEpisode);
+
         // Library was enriched with an external subtitle track.
         var detail = await QueryLibraryAsync(q => q.GetAsync(new MediaAssetId(assetId)));
         var subtitle = Assert.Single(detail!.Versions[0].Streams, s => s.Type == MediaStreamType.Subtitle && s.IsExternal);
@@ -60,6 +65,35 @@ public sealed class SubtitleFlowTests : IAsyncLifetime
 
         var detail = await QueryLibraryAsync(q => q.GetAsync(new MediaAssetId(assetId)));
         Assert.DoesNotContain(detail!.Versions[0].Streams, s => s.IsExternal);
+    }
+
+    [Fact]
+    public async Task A_best_candidate_in_another_alphabet_is_passed_over_for_the_next_one()
+    {
+        // Arrange — the best-scored file is labelled English but written in Hebrew, as one really was.
+        const string hebrew = "1\n00:01:47,250 --> 00:01:50,500\n.ללהב הזה יש עבר אפל, הוא שפך כמויות רבות של דם\n\n"
+            + "2\n00:01:58,000 --> 00:02:01,450\nאתה טיפש שאתה מטייל לבד, כל כך לא מצויד. יש לך מזל שהדם שלך עדיין זורם\n\n"
+            + "3\n00:02:05,000 --> 00:02:08,000\nאלו אדמות של דרקונים, סינטל. את קרובה יותר משנדמה לך\n";
+        _provider.Candidates =
+        [
+            new Providers.ProviderCandidate("Movie.2024.hebrew", 95, false, SubtitleFormat.Srt, "file-hebrew", Reason: "Same film by IMDb id (tt1)."),
+            new Providers.ProviderCandidate("Movie.2024.english", 80, false, SubtitleFormat.Srt, "file-english", Reason: "Same film by IMDb id (tt1)."),
+        ];
+        _provider.ContentFor["file-hebrew"] = System.Text.Encoding.UTF8.GetBytes(hebrew);
+        var assetId = await RegisterAssetAsync(withEnglishSubtitle: false);
+
+        // Act
+        await DrainAsync();
+
+        // Assert — both were fetched, best first, and the English one is what landed.
+        var summary = Assert.Single(await QuerySubtitlesAsync(q => q.ListForAssetAsync(assetId)));
+        Assert.Equal(SubtitleSearchState.Available, summary.State);
+        Assert.Equal(["file-hebrew", "file-english"], _provider.Downloads.ToArray());
+        Assert.Single(_fileStore.Written);
+
+        // Every candidate is kept with the reason it scored what it did.
+        var detail = await QuerySubtitlesAsync(q => q.GetAsync(summary.Id));
+        Assert.All(detail!.Candidates, candidate => Assert.Equal("Same film by IMDb id (tt1).", candidate.Reason));
     }
 
     [Fact]

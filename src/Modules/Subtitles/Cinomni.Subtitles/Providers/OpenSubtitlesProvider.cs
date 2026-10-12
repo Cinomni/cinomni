@@ -86,7 +86,8 @@ public sealed class OpenSubtitlesProvider(
     /// title and the episode is pinned with <c>season_number</c>/<c>episode_number</c> (plus
     /// <c>parent_imdb_id</c> when the catalog knows one): the API narrows on those, whereas a full release
     /// name as <c>query</c> is matched loosely and returns the same broad set for every episode of a show.
-    /// A movie keeps the previous behaviour exactly — the release name as the query and nothing else.
+    /// A movie is searched by its IMDb id when the catalog knows one, else by its catalog title and year,
+    /// and only as a last resort by the release name — which matched another film on a shared group tag.
     /// <para>
     /// The address has to be the API's one canonical form, or it answers 301 with that form instead —
     /// and this client follows no redirect, so any other spelling is a failed search. Canonical means the
@@ -96,26 +97,36 @@ public sealed class OpenSubtitlesProvider(
     /// </summary>
     private static string BuildSearchUri(SubtitleProviderQuery query)
     {
-        var term = query.IsEpisode && !string.IsNullOrWhiteSpace(query.SeriesTitle) ? query.SeriesTitle! : query.Release;
         var parameters = new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["languages"] = query.Language,
-            ["query"] = term,
         };
 
-        if (query.SeasonNumber is { } season)
+        if (query.IsEpisode)
         {
-            parameters["season_number"] = season.ToString(CultureInfo.InvariantCulture);
+            parameters["query"] = string.IsNullOrWhiteSpace(query.SeriesTitle) ? query.Release : query.SeriesTitle;
+            parameters["season_number"] = query.SeasonNumber!.Value.ToString(CultureInfo.InvariantCulture);
+            parameters["episode_number"] = query.EpisodeNumber!.Value.ToString(CultureInfo.InvariantCulture);
+            if (SubtitleCandidateScorer.ImdbNumber(query.ParentImdbId) is { } series)
+            {
+                parameters["parent_imdb_id"] = series;
+            }
         }
-
-        if (query.EpisodeNumber is { } episode)
+        else if (SubtitleCandidateScorer.ImdbNumber(query.ImdbId) is { } film)
         {
-            parameters["episode_number"] = episode.ToString(CultureInfo.InvariantCulture);
+            parameters["imdb_id"] = film;
         }
-
-        if (ImdbNumber(query.ParentImdbId) is { } imdb)
+        else if (!string.IsNullOrWhiteSpace(query.Title))
         {
-            parameters["parent_imdb_id"] = imdb;
+            parameters["query"] = query.Title;
+            if (query.Year is { } year)
+            {
+                parameters["year"] = year.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+        else
+        {
+            parameters["query"] = query.Release;
         }
 
         return "subtitles?" + string.Join('&', parameters.Select(p => $"{p.Key}={CanonicalValue(p.Value)}"));
@@ -123,27 +134,6 @@ public sealed class OpenSubtitlesProvider(
 
     private static string CanonicalValue(string value) =>
         Uri.EscapeDataString(value.ToLowerInvariant()).Replace("%20", "+", StringComparison.Ordinal);
-
-    /// <summary>
-    /// The number in a title id such as <c>tt0898266</c>, or <c>null</c> for anything that is not one —
-    /// a person id, an empty value, or text that would otherwise reach the query.
-    /// </summary>
-    private static string? ImdbNumber(string? imdbId)
-    {
-        if (string.IsNullOrWhiteSpace(imdbId))
-        {
-            return null;
-        }
-
-        var digits = imdbId.StartsWith("tt", StringComparison.OrdinalIgnoreCase) ? imdbId[2..] : imdbId;
-        if (digits.Length == 0 || !digits.All(char.IsAsciiDigit))
-        {
-            return null;
-        }
-
-        var number = digits.TrimStart('0');
-        return number.Length == 0 ? null : number;
-    }
 
     private IReadOnlyList<ProviderCandidate> Parse(JsonDocument document, SubtitleProviderQuery query)
     {
@@ -163,22 +153,65 @@ public sealed class OpenSubtitlesProvider(
             var release = GetString(attributes, "release") ?? query.Release;
             var hearingImpaired = attributes.TryGetProperty("hearing_impaired", out var hi) && hi.ValueKind == JsonValueKind.True;
             var forced = attributes.TryGetProperty("foreign_parts_only", out var foreign) && foreign.ValueKind == JsonValueKind.True;
-            var score = ScoreOf(attributes);
             var fileId = FirstFileId(attributes);
             if (fileId is not null)
             {
-                candidates.Add(new ProviderCandidate(release, score, hearingImpaired, SubtitleFormat.Srt, fileId, forced));
+                var scored = SubtitleCandidateScorer.Score(query, Evidence(attributes, release));
+                candidates.Add(new ProviderCandidate(release, scored.Score, hearingImpaired, SubtitleFormat.Srt, fileId, forced, scored.Reason));
             }
         }
 
         return candidates;
     }
 
-    private static int ScoreOf(JsonElement attributes)
+    /// <summary>
+    /// What the API publishes about the file beside its name: the title it was filed under — a film, or
+    /// an episode with its series — and how it was made. Read defensively: any field may be missing or
+    /// of another type, and then it simply says nothing.
+    /// </summary>
+    private static CandidateEvidence Evidence(JsonElement attributes, string release)
     {
-        var rating = attributes.TryGetProperty("ratings", out var r) && r.TryGetDouble(out var value) ? value : 0;
-        return (int)Math.Round(Math.Clamp(rating, 0, 10) * 10);
+        var details = attributes.TryGetProperty("feature_details", out var feature) && feature.ValueKind == JsonValueKind.Object
+            ? feature
+            : default;
+        var isEpisode = details.ValueKind == JsonValueKind.Object
+            && string.Equals(GetString(details, "feature_type"), "Episode", StringComparison.OrdinalIgnoreCase);
+        var machine = IsTrue(attributes, "machine_translated") || IsTrue(attributes, "ai_translated");
+        var downloads = GetInt(attributes, "download_count") ?? 0;
+
+        if (details.ValueKind != JsonValueKind.Object)
+        {
+            return new CandidateEvidence(release, DownloadCount: downloads, Trusted: IsTrue(attributes, "from_trusted"), MachineTranslated: machine);
+        }
+
+        return isEpisode
+            ? new CandidateEvidence(
+                release,
+                Title: GetString(details, "parent_title"),
+                ImdbId: GetInt(details, "imdb_id")?.ToString(CultureInfo.InvariantCulture),
+                ParentImdbId: GetInt(details, "parent_imdb_id")?.ToString(CultureInfo.InvariantCulture),
+                Season: GetInt(details, "season_number"),
+                Episode: GetInt(details, "episode_number"),
+                DownloadCount: downloads,
+                Trusted: IsTrue(attributes, "from_trusted"),
+                MachineTranslated: machine)
+            : new CandidateEvidence(
+                release,
+                Title: GetString(details, "title"),
+                Year: GetInt(details, "year") is { } year and > 1800 ? year : null,
+                ImdbId: GetInt(details, "imdb_id")?.ToString(CultureInfo.InvariantCulture),
+                DownloadCount: downloads,
+                Trusted: IsTrue(attributes, "from_trusted"),
+                MachineTranslated: machine);
     }
+
+    private static bool IsTrue(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+
+    private static int? GetInt(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
+            ? number
+            : null;
 
     private static string? FirstFileId(JsonElement attributes)
     {

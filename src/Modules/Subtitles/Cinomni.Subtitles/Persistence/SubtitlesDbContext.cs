@@ -45,6 +45,7 @@ public sealed class SubtitlesDbContext(DbContextOptions<SubtitlesDbContext> opti
         candidate.Property(x => x.Provider).HasMaxLength(200);
         candidate.Property(x => x.Release).HasMaxLength(200);
         candidate.Property(x => x.DownloadRef).HasMaxLength(500);
+        candidate.Property(x => x.Reason).HasMaxLength(SubtitleCandidate.ReasonMaxLength).HasDefaultValue(string.Empty);
 
         var asset = modelBuilder.Entity<SubtitleAsset>();
         asset.ToTable("subtitle_assets");

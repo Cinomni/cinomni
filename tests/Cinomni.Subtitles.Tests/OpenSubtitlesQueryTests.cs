@@ -74,6 +74,59 @@ public sealed class OpenSubtitlesQueryTests
     }
 
     [Fact]
+    public async Task A_movie_the_catalog_knows_by_imdb_id_is_searched_by_that_id_alone()
+    {
+        var query = await SearchQueryFor(new SubtitleProviderQuery(
+            "classicalhd-sintel.2010.en-1080p", "en", HearingImpaired: false, Title: "Sintel", Year: 2010, ImdbId: "tt1727587"));
+
+        Assert.Equal("?imdb_id=1727587&languages=en", query);
+    }
+
+    [Fact]
+    public async Task A_movie_without_an_imdb_id_is_searched_by_its_catalog_title_and_year_not_its_release_name()
+    {
+        var query = await SearchQueryFor(new SubtitleProviderQuery(
+            "classicalhd-sintel.2010.en-1080p", "en", HearingImpaired: false, Title: "Sintel", Year: 2010));
+
+        Assert.Equal("?languages=en&query=sintel&year=2010", query);
+    }
+
+    [Fact]
+    public async Task Candidates_are_scored_on_the_identity_the_api_publishes_for_each_file()
+    {
+        // Trimmed from a real answer to a search for this release: the provider's text search also
+        // returned another film that shares the release group's name.
+        const string answer = """
+            { "data": [
+              { "attributes": { "release": "themba.das.spiel.seines.lebens.2010-720p-classicalhd", "download_count": 56,
+                  "feature_details": { "feature_type": "Movie", "title": "Themba", "year": 2010, "imdb_id": 1599369 },
+                  "files": [ { "file_id": 10522014 } ] } },
+              { "attributes": { "release": "sintel_en", "download_count": 8223, "from_trusted": true,
+                  "feature_details": { "feature_type": "Movie", "title": "Sintel", "year": 2010, "imdb_id": 1727587 },
+                  "files": [ { "file_id": 66100 } ] } },
+              { "attributes": { "release": "Sintel.2010", "machine_translated": true,
+                  "feature_details": { "feature_type": "Movie", "title": "Sintel", "year": 2010, "imdb_id": "not-a-number" },
+                  "files": [ { "file_id": 1 } ] } }
+            ] }
+            """;
+        var handler = new RecordingHandler { SearchBody = answer };
+        var provider = new OpenSubtitlesProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("https://api.opensubtitles.example/api/v1/") },
+            new SubtitleProviderOptions { ApiKey = "the-key" },
+            NullLogger<OpenSubtitlesProvider>.Instance);
+
+        var candidates = await provider.SearchAsync(new SubtitleProviderQuery(
+            "classicalhd-sintel.2010.en-1080p", "en", HearingImpaired: false, Title: "Sintel", Year: 2010, ImdbId: "tt1727587"));
+
+        Assert.Equal(3, candidates.Count);
+        Assert.Equal(0, candidates[0].Score);
+        Assert.Contains("Another film: Themba (2010)", candidates[0].Reason, StringComparison.Ordinal);
+        Assert.InRange(candidates[1].Score, 60, 100);
+        Assert.StartsWith("Same film by IMDb id", candidates[1].Reason, StringComparison.Ordinal);
+        Assert.True(candidates[2].Score < 40, candidates[2].Reason);
+    }
+
+    [Fact]
     public async Task Every_api_request_asks_for_json_because_the_download_endpoint_fails_without_it()
     {
         var handler = new RecordingHandler();
@@ -111,6 +164,8 @@ public sealed class OpenSubtitlesQueryTests
 
         public List<(Uri Uri, string Accept)> Accepts { get; } = [];
 
+        public string SearchBody { get; init; } = """{ "data": [] }""";
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.RequestUri!.AbsolutePath.EndsWith("/subtitles", StringComparison.Ordinal))
@@ -122,7 +177,7 @@ public sealed class OpenSubtitlesQueryTests
             var body = request.RequestUri.AbsolutePath switch
             {
                 var path when path.EndsWith("/download", StringComparison.Ordinal) => """{ "link": "https://files.example/sub.srt" }""",
-                var path when path.EndsWith("/subtitles", StringComparison.Ordinal) => """{ "data": [] }""",
+                var path when path.EndsWith("/subtitles", StringComparison.Ordinal) => SearchBody,
                 _ => "1\n00:00:01,000 --> 00:00:02,000\nHello\n",
             };
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
