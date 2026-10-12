@@ -73,6 +73,23 @@ public sealed class OpenSubtitlesQueryTests
         Assert.Equal("?languages=en&query=am%C3%A9lie+%26+co%2B1+%3D+l%27%C3%A9cole", query);
     }
 
+    [Fact]
+    public async Task Every_api_request_asks_for_json_because_the_download_endpoint_fails_without_it()
+    {
+        var handler = new RecordingHandler();
+        var provider = new OpenSubtitlesProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("https://api.opensubtitles.example/api/v1/") },
+            new SubtitleProviderOptions { ApiKey = "the-key" },
+            NullLogger<OpenSubtitlesProvider>.Instance);
+
+        await provider.SearchAsync(new SubtitleProviderQuery("Movie", "en", HearingImpaired: false));
+        await provider.DownloadAsync("42");
+
+        var apiCalls = handler.Accepts.Where(a => a.Uri.Host == "api.opensubtitles.example").ToList();
+        Assert.Equal(2, apiCalls.Count);
+        Assert.All(apiCalls, call => Assert.Equal("application/json", call.Accept));
+    }
+
     private static async Task<string> SearchQueryFor(SubtitleProviderQuery query)
     {
         var handler = new RecordingHandler();
@@ -92,12 +109,25 @@ public sealed class OpenSubtitlesQueryTests
     {
         public List<Uri> Requests { get; } = [];
 
+        public List<(Uri Uri, string Accept)> Accepts { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Requests.Add(request.RequestUri!);
+            if (request.RequestUri!.AbsolutePath.EndsWith("/subtitles", StringComparison.Ordinal))
+            {
+                Requests.Add(request.RequestUri);
+            }
+
+            Accepts.Add((request.RequestUri, request.Headers.Accept.ToString()));
+            var body = request.RequestUri.AbsolutePath switch
+            {
+                var path when path.EndsWith("/download", StringComparison.Ordinal) => """{ "link": "https://files.example/sub.srt" }""",
+                var path when path.EndsWith("/subtitles", StringComparison.Ordinal) => """{ "data": [] }""",
+                _ => "1\n00:00:01,000 --> 00:00:02,000\nHello\n",
+            };
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("""{ "data": [] }""", Encoding.UTF8, "application/json"),
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
             });
         }
     }
