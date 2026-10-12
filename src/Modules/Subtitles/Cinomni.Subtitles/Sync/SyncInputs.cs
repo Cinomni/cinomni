@@ -1,3 +1,4 @@
+using Cinomni.Subtitles.Application;
 using Cinomni.Library.Contracts;
 
 namespace Cinomni.Subtitles.Sync;
@@ -58,22 +59,6 @@ public static class SyncWindowPlan
 /// </summary>
 public static class SyncAudioTrack
 {
-    // ISO 639-1 codes (what the subtitle preference holds) to the 639-2 codes containers usually tag
-    // audio with, bibliographic and terminological forms both. Languages outside this list match only
-    // when the track is tagged with the same two letters.
-    private static readonly Dictionary<string, string[]> ThreeLetter = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["en"] = ["eng"], ["es"] = ["spa"], ["fr"] = ["fra", "fre"], ["de"] = ["deu", "ger"],
-        ["it"] = ["ita"], ["pt"] = ["por"], ["nl"] = ["nld", "dut"], ["ru"] = ["rus"],
-        ["ja"] = ["jpn"], ["zh"] = ["zho", "chi"], ["ko"] = ["kor"], ["ar"] = ["ara"],
-        ["sv"] = ["swe"], ["no"] = ["nor", "nob", "nno"], ["da"] = ["dan"], ["fi"] = ["fin"],
-        ["pl"] = ["pol"], ["tr"] = ["tur"], ["cs"] = ["ces", "cze"], ["el"] = ["ell", "gre"],
-        ["he"] = ["heb"], ["hu"] = ["hun"], ["ro"] = ["ron", "rum"], ["ca"] = ["cat"],
-        ["uk"] = ["ukr"], ["hi"] = ["hin"], ["th"] = ["tha"], ["vi"] = ["vie"],
-        ["id"] = ["ind"], ["bg"] = ["bul"], ["hr"] = ["hrv"], ["sr"] = ["srp"],
-        ["sk"] = ["slk", "slo"], ["sl"] = ["slv"], ["eu"] = ["eus", "baq"], ["gl"] = ["glg"],
-    };
-
     /// <summary>The stream index to decode, or null when the video has no audio at all.</summary>
     public static int? Choose(IReadOnlyList<MediaStreamSummary> streams, string subtitleLanguage)
     {
@@ -91,16 +76,6 @@ public static class SyncAudioTrack
         return chosen.StreamIndex;
     }
 
-    public static bool Matches(string subtitleLanguage, string? trackLanguage)
-    {
-        if (string.IsNullOrWhiteSpace(trackLanguage))
-        {
-            return false;
-        }
-
-        var track = trackLanguage.Trim();
-        return string.Equals(subtitleLanguage, track, StringComparison.OrdinalIgnoreCase)
-            || (ThreeLetter.TryGetValue(subtitleLanguage, out var codes)
-                && codes.Contains(track, StringComparer.OrdinalIgnoreCase));
-    }
+    public static bool Matches(string subtitleLanguage, string? trackLanguage) =>
+        LanguageCodes.SameLanguage(subtitleLanguage, trackLanguage);
 }
