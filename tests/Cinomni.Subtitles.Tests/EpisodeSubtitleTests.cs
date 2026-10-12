@@ -83,6 +83,26 @@ public sealed class EpisodeSubtitleTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_episode_the_catalog_cannot_resolve_is_numbered_from_its_file_name()
+    {
+        // Arrange — a series asset linked to a unit the catalog has no episode for, as when a series was
+        // added without its episode tree. The file name still says which episode it is.
+        var assetId = Uuid7.New();
+        var path = $"/data/library/{SeriesTitle} (2002)/Season 07/{SeriesTitle} - S07E08 - The Itchy Brain Simulation.mkv";
+        await RegisterAsync(assetId, _workId.Value, path, [Uuid7.New()]);
+
+        // Act
+        await SearchAsync(assetId);
+
+        // Assert — searched as that episode of the series, not as a film with no title.
+        var query = Assert.Single(_provider.Searches);
+        Assert.True(query.IsEpisode);
+        Assert.Equal((7, 8), (query.SeasonNumber!.Value, query.EpisodeNumber!.Value));
+        Assert.Equal(SeriesTitle, query.SeriesTitle);
+        Assert.Equal(ImdbId, query.ParentImdbId);
+    }
+
+    [Fact]
     public async Task A_movie_query_carries_neither()
     {
         // Arrange — the movie path: the asset's only unit is its own work.
