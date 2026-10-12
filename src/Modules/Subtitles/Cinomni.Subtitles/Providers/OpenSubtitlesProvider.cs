@@ -86,7 +86,8 @@ public sealed class OpenSubtitlesProvider(
     /// title and the episode is pinned with <c>season_number</c>/<c>episode_number</c> (plus
     /// <c>parent_imdb_id</c> when the catalog knows one): the API narrows on those, whereas a full release
     /// name as <c>query</c> is matched loosely and returns the same broad set for every episode of a show.
-    /// A movie is searched by its IMDb id when the catalog knows one, else by its catalog title and year,
+    /// A movie is searched by its IMDb id when the catalog knows one, else by its catalog title and year
+    /// as one search text,
     /// and only as a last resort by the release name — which matched another film on a shared group tag.
     /// <para>
     /// The address has to be the API's one canonical form, or it answers 301 with that form instead —
@@ -118,11 +119,12 @@ public sealed class OpenSubtitlesProvider(
         }
         else if (!string.IsNullOrWhiteSpace(query.Title))
         {
-            parameters["query"] = query.Title;
-            if (query.Year is { } year)
-            {
-                parameters["year"] = year.ToString(CultureInfo.InvariantCulture);
-            }
+            // The year goes in the text, not in the API's year filter: measured against the live API,
+            // "28 days later" with year=2002 found nothing, the bare title found other works, and
+            // "28 days later 2002" found the film's 46 subtitles. The scorer checks the year itself.
+            parameters["query"] = query.Year is { } year
+                ? string.Create(CultureInfo.InvariantCulture, $"{query.Title} {year}")
+                : query.Title;
         }
         else
         {
