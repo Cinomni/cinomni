@@ -12,6 +12,9 @@ namespace Cinomni.Subtitles.Tests;
 /// </summary>
 internal sealed class SyntheticDialogue
 {
+    /// <summary>How long a cue stays on screen after its line is spoken (measured on real subtitles).</summary>
+    private const int LingerMs = 400;
+
     private readonly Random _random;
 
     public SyntheticDialogue(int seed, TimeSpan duration)
@@ -31,9 +34,11 @@ internal sealed class SyntheticDialogue
         foreach (var cue in Cues)
         {
             // Speech starts and stops a little either side of the cue: a subtitler's timing is not a
-            // sample-accurate transcript, and neither is a detector's.
+            // sample-accurate transcript, and neither is a detector's. And a cue stays up a little after
+            // its line ends, so the reader can finish it.
+            var spokenUntil = Math.Max(cue.StartMs + 200, cue.EndMs - LingerMs);
             var from = (long)(cue.StartMs * ratio) + offsetMs + _random.Next(-120, 121);
-            var to = (long)(cue.EndMs * ratio) + offsetMs + _random.Next(-120, 121);
+            var to = (long)(spokenUntil * ratio) + offsetMs + _random.Next(-120, 121);
             Mark(speech, startMs, from, to);
         }
 
@@ -45,7 +50,7 @@ internal sealed class SyntheticDialogue
             }
         }
 
-        return new SpeechWindow(startMs, speech);
+        return new SpeechWindow(startMs, Activity(speech));
     }
 
     /// <summary>Speech that has nothing to do with the cues: the same amount of talk, at random.</summary>
@@ -62,7 +67,7 @@ internal sealed class SyntheticDialogue
             at += talk + pause;
         }
 
-        return new SpeechWindow((long)start.TotalMilliseconds, speech);
+        return new SpeechWindow((long)start.TotalMilliseconds, Activity(speech));
     }
 
     /// <summary>The cues as a SubRip file, numbered, with one line of text each.</summary>
@@ -103,6 +108,21 @@ internal sealed class SyntheticDialogue
         }
 
         return cues;
+    }
+
+    /// <summary>
+    /// What the detector would report for that speech: high where somebody talks and low elsewhere, with
+    /// the noise a real recording adds on both. The search only sees a continuous series, never the marks.
+    /// </summary>
+    private double[] Activity(bool[] speech)
+    {
+        var activity = new double[speech.Length];
+        for (var i = 0; i < speech.Length; i++)
+        {
+            activity[i] = (speech[i] ? 1.0 : 0.2) + (0.3 * _random.NextDouble());
+        }
+
+        return activity;
     }
 
     private static void Mark(bool[] speech, long windowStartMs, long fromMs, long toMs)
