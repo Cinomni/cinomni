@@ -57,6 +57,10 @@ under the rules in *Versioning* below.
   video ranks first, then downloads and trusted uploaders, and a machine translation ranks last. Films
   are searched by IMDb id, or by title and year, instead of by release name. Each candidate keeps the
   reason for its score. `Subtitles__MinScore` now defaults to 40, which requires a matched identity.
+- **A title that already carries a subtitle in your language is not searched again.** The preference
+  names a language in two letters (`en`) and a video's own tracks are tagged in three (`eng`). Compared
+  literally they never matched, so every title was searched for a subtitle it already had, and the
+  download landed beside it.
 - **A subtitle in the wrong alphabet is passed over.** A file labelled English but written in Hebrew
   was downloaded as the English subtitle. A download is now checked against the alphabet of its
   language, and up to three candidates are tried in order before the search waits for its next
