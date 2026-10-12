@@ -79,15 +79,31 @@ public sealed class SubtitleSearchService(
     private async Task RecordAlreadyPresentAsync(
         Guid assetId, string language, SubtitlePreference wanted, CancellationToken cancellationToken)
     {
-        var exists = await dbContext.Searches.AnyAsync(
+        var existing = await dbContext.Searches.FirstOrDefaultAsync(
             s => s.AssetId == assetId && s.Language == language && s.Forced == wanted.Forced && s.HearingImpaired == wanted.HearingImpaired,
             cancellationToken);
-        if (exists)
+        var now = DateTimeOffset.UtcNow;
+        if (existing is not null)
         {
+            // A search left NotFound for a subtitle the file turns out to carry is closed as covered, so the
+            // catch-up stops returning to it. Any other row is the record of a search that ran: left alone.
+            if (existing.State == SubtitleSearchState.NotFound)
+            {
+                existing.MarkAlreadyPresent(now);
+                try
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    // Another pass moved it first; whatever it recorded stands.
+                    dbContext.ChangeTracker.Clear();
+                }
+            }
+
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
         var search = SubtitleSearch.Create(assetId, language, wanted.Forced, wanted.HearingImpaired, now);
         search.MarkAlreadyPresent(now);
         dbContext.Searches.Add(search);

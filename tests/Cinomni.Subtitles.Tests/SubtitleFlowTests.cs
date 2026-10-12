@@ -97,6 +97,21 @@ public sealed class SubtitleFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_embedded_track_tagged_in_three_letters_counts_as_the_language_wanted()
+    {
+        // Containers tag tracks "eng"; the preference says "en". Compared literally, this file was
+        // searched for, and given, a second English subtitle.
+        var assetId = await RegisterAssetAsync(withEnglishSubtitle: true, subtitleTag: "eng");
+
+        await DrainAsync();
+
+        var recorded = Assert.Single(await QuerySubtitlesAsync(q => q.ListForAssetAsync(assetId)));
+        Assert.Equal(SubtitleSearchState.Available, recorded.State);
+        Assert.Empty(_provider.Searches);
+        Assert.Empty(_fileStore.Written);
+    }
+
+    [Fact]
     public async Task A_language_already_present_is_not_searched()
     {
         var assetId = await RegisterAssetAsync(withEnglishSubtitle: true);
@@ -193,7 +208,7 @@ public sealed class SubtitleFlowTests : IAsyncLifetime
 
     // -- helpers ---------------------------------------------------------------------------------
 
-    private async Task<Guid> RegisterAssetAsync(bool withEnglishSubtitle, string path = MoviePath)
+    private async Task<Guid> RegisterAssetAsync(bool withEnglishSubtitle, string path = MoviePath, string subtitleTag = "en")
     {
         var assetId = Uuid7.New();
         var streams = new List<MediaStreamInput>
@@ -203,7 +218,7 @@ public sealed class SubtitleFlowTests : IAsyncLifetime
         };
         if (withEnglishSubtitle)
         {
-            streams.Add(new MediaStreamInput(2, MediaStreamType.Subtitle, "subrip", "en", null, null, null, null, null, false, false));
+            streams.Add(new MediaStreamInput(2, MediaStreamType.Subtitle, "subrip", subtitleTag, null, null, null, null, null, false, false));
         }
 
         var request = new RegisterMediaAssetRequest(
