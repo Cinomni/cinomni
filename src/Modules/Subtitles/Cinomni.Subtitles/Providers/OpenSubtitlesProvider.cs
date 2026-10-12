@@ -71,6 +71,8 @@ public sealed class OpenSubtitlesProvider(
     private HttpRequestMessage ApiRequest(HttpMethod method, string uri)
     {
         var request = new HttpRequestMessage(method, uri);
+        // Required, not a courtesy: without it the API answers POST download with its HTML 503 page.
+        request.Headers.Accept.ParseAdd("application/json");
         if (!string.IsNullOrEmpty(options.ApiKey))
         {
             request.Headers.Add("Api-Key", options.ApiKey);
