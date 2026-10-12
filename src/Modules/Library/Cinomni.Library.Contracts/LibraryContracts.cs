@@ -67,6 +67,24 @@ public sealed record MediaStreamSummary(
     bool IsExternal);
 
 /// <summary>
+/// Whether a subtitle stream is text. A text subtitle (SubRip, ASS, WebVTT, MP4 timed text) is shown by a
+/// browser once converted to WebVTT; a picture one (PGS, VobSub, DVB) only by burning it into the video,
+/// which turns direct play into a full re-encode. A sidecar is always text: only Subtitles adds one, and it
+/// writes SubRip, ASS or WebVTT.
+/// </summary>
+public static class SubtitleStreams
+{
+    private static readonly HashSet<string> TextCodecs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text",
+    };
+
+    public static bool IsText(MediaStreamSummary stream) =>
+        stream.Type == MediaStreamType.Subtitle
+        && (stream.IsExternal || (stream.Codec is { } codec && TextCodecs.Contains(codec)));
+}
+
+/// <summary>
 /// One stored file path with the asset and version carrying it. Deliberately the whole of what a
 /// path-repair pass needs and nothing else: it enumerates the library, so anything richer would
 /// materialise every asset's streams to move a file.

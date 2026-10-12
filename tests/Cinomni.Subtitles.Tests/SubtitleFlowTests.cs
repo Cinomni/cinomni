@@ -112,6 +112,21 @@ public sealed class SubtitleFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_embedded_picture_track_does_not_count_as_the_language_wanted()
+    {
+        // A Blu-ray remux carries its subtitles as PGS pictures. A browser cannot draw them: shown only by
+        // burning them into the video, a full re-encode a 4K file cannot get in real time. A text one is fetched.
+        var assetId = await RegisterAssetAsync(withEnglishSubtitle: true, subtitleTag: "eng", subtitleCodec: "hdmv_pgs_subtitle");
+
+        await DrainAsync();
+
+        var search = Assert.Single(await QuerySubtitlesAsync(q => q.ListForAssetAsync(assetId)));
+        Assert.Equal(SubtitleSearchState.Available, search.State);
+        Assert.Single(_provider.Searches);
+        Assert.Contains(_fileStore.Written, w => w.Language == "en" && w.VideoPath == MoviePath);
+    }
+
+    [Fact]
     public async Task A_language_already_present_is_not_searched()
     {
         var assetId = await RegisterAssetAsync(withEnglishSubtitle: true);
@@ -208,7 +223,8 @@ public sealed class SubtitleFlowTests : IAsyncLifetime
 
     // -- helpers ---------------------------------------------------------------------------------
 
-    private async Task<Guid> RegisterAssetAsync(bool withEnglishSubtitle, string path = MoviePath, string subtitleTag = "en")
+    private async Task<Guid> RegisterAssetAsync(
+        bool withEnglishSubtitle, string path = MoviePath, string subtitleTag = "en", string subtitleCodec = "subrip")
     {
         var assetId = Uuid7.New();
         var streams = new List<MediaStreamInput>
@@ -218,7 +234,7 @@ public sealed class SubtitleFlowTests : IAsyncLifetime
         };
         if (withEnglishSubtitle)
         {
-            streams.Add(new MediaStreamInput(2, MediaStreamType.Subtitle, "subrip", subtitleTag, null, null, null, null, null, false, false));
+            streams.Add(new MediaStreamInput(2, MediaStreamType.Subtitle, subtitleCodec, subtitleTag, null, null, null, null, null, false, false));
         }
 
         var request = new RegisterMediaAssetRequest(

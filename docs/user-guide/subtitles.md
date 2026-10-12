@@ -7,8 +7,10 @@ A video can have subtitles from two places:
 - **Inside the file.** Many releases carry subtitle tracks. Cinomni lists them in the player as they
   are.
 - **Downloaded by Cinomni.** After a file is imported, Cinomni searches the subtitle providers for
-  every *wanted language* and saves the best match next to the video. If nothing is found yet, it
-  searches again later on its own.
+  every *wanted language* the file does not already carry as a text track, and saves the best match
+  next to the video. A language the file carries only as pictures (PGS, VobSub) is still searched,
+  because a text subtitle plays without a conversion. If nothing is found yet, it searches again later
+  on its own.
 
 The providers are **OpenSubtitles** and **SubDL**; each works once the administrator has configured
 its API key. Without either, downloaded subtitles are simply not available and everything else works.

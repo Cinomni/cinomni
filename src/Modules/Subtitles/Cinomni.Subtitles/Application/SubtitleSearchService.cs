@@ -273,7 +273,10 @@ public sealed class SubtitleSearchService(
         CancellationToken cancellationToken)
     {
         var present = new List<(string Language, bool Forced, bool HearingImpaired)>();
-        foreach (var stream in version.Streams.Where(s => s.Type == MediaStreamType.Subtitle && s.Language is not null))
+
+        // Only a text track covers a language. A picture one (PGS, VobSub) is shown only by burning it into
+        // the video, a full re-encode that a 4K file cannot get in real time; a text sidecar plays directly.
+        foreach (var stream in version.Streams.Where(s => SubtitleStreams.IsText(s) && s.Language is not null))
         {
             // An embedded track carries forced, not hearing-impaired. It must not satisfy an HI request.
             present.Add((stream.Language!, stream.IsForced, false));

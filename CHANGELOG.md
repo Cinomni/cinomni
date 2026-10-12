@@ -60,7 +60,10 @@ under the rules in *Versioning* below.
 - **A title that already carries a subtitle in your language is not searched again.** The preference
   names a language in two letters (`en`) and a video's own tracks are tagged in three (`eng`). Compared
   literally they never matched, so every title was searched for a subtitle it already had, and the
-  download landed beside it.
+  download landed beside it. Only a text subtitle counts. A Blu-ray remux often carries a language only
+  as pictures (PGS or VobSub), which the player can show only by burning them into the video. That is a
+  full conversion, too slow for a 4K file on most servers. For such a language Cinomni downloads a text
+  subtitle, which plays without converting anything.
 - **A subtitle in the wrong alphabet is passed over.** A file labelled English but written in Hebrew
   was downloaded as the English subtitle. A download is now checked against the alphabet of its
   language, and up to three candidates are tried in order before the search waits for its next
