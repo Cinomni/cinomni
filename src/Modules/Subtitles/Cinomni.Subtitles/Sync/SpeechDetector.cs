@@ -1,15 +1,19 @@
 namespace Cinomni.Subtitles.Sync;
 
 /// <summary>
-/// Finds where somebody is probably speaking in a stretch of mono 8 kHz audio, on a 10 ms grid.
+/// How much a stretch of mono 8 kHz audio sounds like somebody talking, on a 10 ms grid.
 /// <para>
-/// Deliberately simple: the audio arrives band-limited to the voice range (FFmpeg's high- and low-pass
-/// filters), so a frame that is clearly louder than the quiet parts of the same stretch is taken as
-/// speech. "Quiet" is measured, not assumed: it is the 20th percentile of the frame levels, so a
-/// noisy recording and a clean one are judged against their own floor. This mistakes music and effects
-/// for speech, and that is acceptable: what matters is that the pattern of loud and quiet lines up with
-/// the subtitle's cues at the right offset better than at any other, and the confidence checks downstream
-/// refuse to act when it does not.
+/// Speech is told apart by its rhythm, not its loudness. A voice rises and falls with every syllable,
+/// a few times a second; music, a laugh track, applause and room tone are loud too, but their level
+/// moves much more slowly or much faster than that. So the measure is how strongly the level of the
+/// voice band (FFmpeg's high- and low-pass filters) swings at syllable rate, 2 to 8 times a second,
+/// around its own recent average.
+/// </para>
+/// <para>
+/// The result is a continuous series, not a speech/no-speech decision: the offset search correlates it
+/// with the subtitle's cues, and a threshold here would throw away exactly the contrast it needs. A
+/// detector that only compared loudness with the stretch's noise floor marked two thirds of a sitcom as
+/// speech, laughter and music included, and found no offset in a subtitle that was simply 2.5 s late.
 /// </para>
 /// </summary>
 public static class SpeechDetector
@@ -21,20 +25,23 @@ public static class SpeechDetector
 
     public const int SamplesPerFrame = SampleRate * FrameMs / 1000;
 
-    /// <summary>How far above the stretch's noise floor a frame must be to count as speech.</summary>
-    public const double ThresholdDb = 11;
+    /// <summary>The slowest and fastest level swings counted as syllables, in swings per second.</summary>
+    public const double SlowestSyllableHz = 2;
 
-    /// <summary>Below this a frame is silence however quiet the rest is (digital silence has no floor).</summary>
-    public const double AbsoluteFloorDb = -55;
+    public const double FastestSyllableHz = 8;
 
-    /// <summary>Speech continues this long past the last loud frame: the gaps between words are speech.</summary>
-    public const int HangoverFrames = 20;
+    /// <summary>The level is measured against its own average over this many frames (one second).</summary>
+    public const int BaselineFrames = 100;
 
-    /// <summary>A loud burst shorter than this is a click or a slam, not a line of dialogue.</summary>
-    public const int MinSegmentFrames = 15;
+    /// <summary>The strength of the swing is averaged over this many frames (400 ms, about two syllables).</summary>
+    public const int StrengthFrames = 40;
 
-    private const double NoisePercentile = 0.2;
+    /// <summary>Half the length of the syllable-rate filter: 50 frames either side, so 2 Hz fits in it.</summary>
+    private const int FilterRadius = 50;
+
     private const double SilenceDb = -120;
+
+    private static readonly double[] SyllableFilter = BuildSyllableFilter();
 
     /// <summary>The level of each whole 10 ms frame of signed 16-bit little-endian PCM, in dBFS.</summary>
     public static double[] FrameLevels(ReadOnlySpan<byte> pcm)
@@ -58,71 +65,93 @@ public static class SpeechDetector
         return levels;
     }
 
-    /// <summary>Which frames are speech, given each frame's level in dBFS.</summary>
-    public static bool[] Detect(IReadOnlyList<double> levels)
+    /// <summary>
+    /// How strongly each frame's level swings at syllable rate: zero for silence or a steady sound,
+    /// larger the more it moves like speech. Only the shape matters to the search, not the scale.
+    /// </summary>
+    public static double[] Activity(IReadOnlyList<double> levels)
     {
-        var speech = new bool[levels.Count];
-        if (levels.Count == 0)
+        var count = levels.Count;
+        if (count == 0)
         {
-            return speech;
+            return [];
         }
 
-        var threshold = Math.Max(NoiseFloor(levels) + ThresholdDb, AbsoluteFloorDb);
-        for (var i = 0; i < levels.Count; i++)
+        // A three-frame average first: a single 10 ms frame is too short to hold a pitch period of a
+        // low voice, and its level jitters with where the period falls.
+        var smoothed = CenteredMean(levels, 3);
+        var baseline = CenteredMean(smoothed, BaselineFrames);
+        var swing = new double[count];
+        for (var i = 0; i < count; i++)
         {
-            speech[i] = levels[i] >= threshold;
+            swing[i] = smoothed[i] - baseline[i];
         }
 
-        DropShortSegments(speech);
-        ExtendWithHangover(speech);
-        return speech;
+        var syllabic = new double[count];
+        for (var i = 0; i < count; i++)
+        {
+            var sum = 0.0;
+            var from = Math.Max(-FilterRadius, -i);
+            var to = Math.Min(FilterRadius, count - 1 - i);
+            for (var k = from; k <= to; k++)
+            {
+                sum += SyllableFilter[k + FilterRadius] * swing[i + k];
+            }
+
+            syllabic[i] = sum * sum;
+        }
+
+        var power = CenteredMean(syllabic, StrengthFrames);
+        var activity = new double[count];
+        for (var i = 0; i < count; i++)
+        {
+            activity[i] = Math.Sqrt(Math.Max(0, power[i]));
+        }
+
+        return activity;
     }
 
-    private static double NoiseFloor(IReadOnlyList<double> levels)
+    /// <summary>
+    /// A band-pass from <see cref="SlowestSyllableHz"/> to <see cref="FastestSyllableHz"/> over a series
+    /// sampled every frame: the difference of two windowed low-passes, symmetric so it delays nothing.
+    /// </summary>
+    private static double[] BuildSyllableFilter()
     {
-        var sorted = levels.ToArray();
-        Array.Sort(sorted);
-        return sorted[(int)Math.Floor((sorted.Length - 1) * NoisePercentile)];
+        const double framesPerSecond = 1000.0 / FrameMs;
+        const double high = FastestSyllableHz / framesPerSecond;
+        const double low = SlowestSyllableHz / framesPerSecond;
+        var taps = new double[(2 * FilterRadius) + 1];
+        for (var k = -FilterRadius; k <= FilterRadius; k++)
+        {
+            var window = 0.54 + (0.46 * Math.Cos(Math.PI * k / FilterRadius));
+            taps[k + FilterRadius] = ((2 * high * Sinc(2 * high * k)) - (2 * low * Sinc(2 * low * k))) * window;
+        }
+
+        return taps;
     }
 
-    private static void DropShortSegments(bool[] speech)
+    private static double Sinc(double x) => x == 0 ? 1 : Math.Sin(Math.PI * x) / (Math.PI * x);
+
+    /// <summary>The mean of each value and its neighbours, over the ones that exist near the edges.</summary>
+    private static double[] CenteredMean(IReadOnlyList<double> values, int width)
     {
-        var i = 0;
-        while (i < speech.Length)
+        var count = values.Count;
+        var prefix = new double[count + 1];
+        for (var i = 0; i < count; i++)
         {
-            if (!speech[i])
-            {
-                i++;
-                continue;
-            }
-
-            var start = i;
-            while (i < speech.Length && speech[i])
-            {
-                i++;
-            }
-
-            if (i - start < MinSegmentFrames)
-            {
-                Array.Fill(speech, false, start, i - start);
-            }
+            prefix[i + 1] = prefix[i] + values[i];
         }
-    }
 
-    private static void ExtendWithHangover(bool[] speech)
-    {
-        var remaining = 0;
-        for (var i = 0; i < speech.Length; i++)
+        var before = width / 2;
+        var after = width - before - 1;
+        var mean = new double[count];
+        for (var i = 0; i < count; i++)
         {
-            if (speech[i])
-            {
-                remaining = HangoverFrames;
-            }
-            else if (remaining > 0)
-            {
-                speech[i] = true;
-                remaining--;
-            }
+            var from = Math.Max(0, i - before);
+            var to = Math.Min(count, i + after + 1);
+            mean[i] = (prefix[to] - prefix[from]) / (to - from);
         }
+
+        return mean;
     }
 }

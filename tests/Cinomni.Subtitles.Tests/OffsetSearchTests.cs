@@ -124,7 +124,7 @@ public sealed class OffsetSearchTests
     public void No_speech_or_no_cues_yields_no_estimate_and_keeps_the_original()
     {
         var dialogue = new SyntheticDialogue(seed: 5, Film);
-        var silent = new SpeechWindow(0, new bool[24_000]);
+        var silent = new SpeechWindow(0, new double[24_000]);
 
         Assert.Null(OffsetSearch.Estimate([], dialogue.Cues));
         Assert.Null(OffsetSearch.Estimate([silent], dialogue.Cues));
@@ -147,7 +147,8 @@ public sealed class OffsetSearchTests
         Assert.Equal(2, plan.Count);
         Assert.True(plan[0].Start + plan[0].Length <= plan[1].Start);
         Assert.Equal(SubtitleSyncOutcome.Applied, verdict.Outcome);
-        Assert.InRange(verdict.OffsetMs, -1_520, -1_480);
+        // Two stretches of 4 minutes hold half the dialogue three do, so the estimate is a little looser.
+        Assert.InRange(verdict.OffsetMs, -1_550, -1_450);
     }
 
     [Fact]
@@ -196,6 +197,6 @@ public sealed class OffsetSearchTests
             speech[i] = ((media % 3_000) + 3_000) % 3_000 < 1_500;
         }
 
-        return new SpeechWindow(startMs, speech);
+        return new SpeechWindow(startMs, speech.Select(on => on ? 1.0 : 0.0).ToArray());
     }
 }

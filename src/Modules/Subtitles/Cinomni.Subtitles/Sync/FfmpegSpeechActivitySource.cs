@@ -44,7 +44,7 @@ public sealed class FfmpegSpeechActivitySource(SubtitleSyncOptions options, ILog
             var pcm = await RunAsync(Arguments(mediaPath, audioStreamIndex, start, length), maxBytes, bounded.Token, cancellationToken);
             return pcm.Failure is { } failure
                 ? SpeechActivity.Failed(failure)
-                : SpeechActivity.Found(SpeechDetector.Detect(SpeechDetector.FrameLevels(pcm.Bytes)));
+                : SpeechActivity.Found(SpeechDetector.Activity(SpeechDetector.FrameLevels(pcm.Bytes)));
         }
         finally
         {

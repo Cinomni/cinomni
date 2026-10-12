@@ -1,14 +1,17 @@
 namespace Cinomni.Subtitles.Sync;
 
-/// <summary>A stretch of the video's audio, as speech or not on the 10 ms grid, starting at <see cref="StartMs"/>.</summary>
-public sealed record SpeechWindow(long StartMs, bool[] Speech);
+/// <summary>
+/// A stretch of the video's audio starting at <see cref="StartMs"/>: how speech-like each 10 ms of it is
+/// (<see cref="SpeechDetector.Activity"/>).
+/// </summary>
+public sealed record SpeechWindow(long StartMs, double[] Speech);
 
 /// <summary>
 /// The best way the analysis found to line the subtitle up with the audio: a cue at <c>t</c> belongs at
-/// <c>t × Ratio + OffsetMs</c>. <see cref="Score"/> is how well cues and speech coincide there (phi,
-/// −1…1), <see cref="Margin"/> how far that stands above the best placement more than two seconds away,
-/// and <see cref="WindowOffsetsMs"/> what each stretch of audio with enough speech and dialogue in it
-/// preferred on its own.
+/// <c>t × Ratio + OffsetMs</c>. <see cref="Score"/> is how well cues and speech coincide there (a
+/// correlation, −1…1), <see cref="Margin"/> how far that stands above the best placement more than two
+/// seconds away, and <see cref="WindowOffsetsMs"/> what each stretch of audio that matched the cues
+/// clearly enough on its own preferred.
 /// </summary>
 public sealed record SyncEstimate(
     long OffsetMs,
@@ -21,11 +24,16 @@ public sealed record SyncEstimate(
 /// Searches the offset (and the frame-rate conversion) that best lines a subtitle's cues up with the
 /// speech found in a few stretches of the video.
 /// <para>
-/// Both sides are reduced to on/off series on the same 10 ms grid, and each candidate placement is
-/// scored by the phi coefficient of the two series: how much more often "a cue is showing" and
-/// "somebody is speaking" coincide than chance would make them, given how much of each there is. A
-/// coarse pass tries every 100 ms within a minute either way; a fine pass tries every 10 ms around the
-/// best of those. Each frame-rate ratio is searched the same way and the best overall wins.
+/// The cues become an on/off series on the same 10 ms grid as the speech activity, and each candidate
+/// placement is scored by the correlation of the two: how much more speech-like the audio is while a
+/// cue is showing than while none is. A coarse pass tries every 100 ms within a minute either way; a
+/// fine pass tries every 10 ms around the best of those. Each frame-rate ratio is searched the same way
+/// and the best overall wins.
+/// </para>
+/// <para>
+/// A cue stays on screen after the line is spoken — a subtitler gives the reader time to finish — so
+/// each one is counted only until <see cref="CueTailTrimMs"/> before it disappears. Counting the whole
+/// cue pulled every estimate a few hundred milliseconds early.
 /// </para>
 /// <para>
 /// Pure and deterministic. It decides nothing: <see cref="SyncDecider"/> applies the confidence rules.
@@ -43,8 +51,21 @@ public static class OffsetSearch
     /// <summary>The margin compares the best match with the best one at least this far from it.</summary>
     public const int MarginExclusionMs = 2_000;
 
-    /// <summary>A stretch counts toward agreement only with this much speech and this much cue time (3 s).</summary>
+    /// <summary>A stretch counts toward agreement only with this much cue time in it (3 s).</summary>
     public const int MinUsableFrames = 300;
+
+    /// <summary>
+    /// A stretch counts toward agreement only when its own best match reaches this correlation. A part
+    /// of a film with almost no dialogue picks an offset at random, and letting it vote would refuse a
+    /// subtitle the rest of the film agrees on.
+    /// </summary>
+    public const double MinWindowScore = 0.2;
+
+    /// <summary>How much of the end of each cue is not counted as speech (see the class remarks).</summary>
+    public const int CueTailTrimMs = 400;
+
+    /// <summary>The least of a cue that is counted, however short it is.</summary>
+    public const int MinCueMs = 200;
 
     /// <summary>Stands in for "nothing else came close at all" so the margin stays a finite number.</summary>
     public const double MarginCap = 100;
@@ -59,10 +80,10 @@ public static class OffsetSearch
     public static SyncEstimate? Estimate(IReadOnlyList<SpeechWindow> windows, IReadOnlyList<SubtitleCue> cues)
     {
         var prepared = windows
-            .Where(window => window.Speech.Length > 0)
             .Select(Prepared.From)
+            .OfType<Prepared>()
             .ToList();
-        if (prepared.Count == 0 || cues.Count == 0 || prepared.All(window => window.SpeechFrames.Length == 0))
+        if (prepared.Count == 0 || cues.Count == 0)
         {
             return null;
         }
@@ -98,19 +119,19 @@ public static class OffsetSearch
         for (var k = 0; k < coarseCount; k++)
         {
             var offset = -MaxOffsetFrames + (k * CoarseStepFrames);
-            var total = default(Counts);
+            var total = default(Sums);
             for (var w = 0; w < windows.Count; w++)
             {
-                var counts = series.Count(windows[w], offset);
-                perWindow[w][k] = counts.Phi();
-                total += counts;
+                var sums = series.Sum(windows[w], offset);
+                perWindow[w][k] = sums.Correlation();
+                total += sums;
             }
 
-            coarse[k] = total.Phi();
+            coarse[k] = total.Correlation();
         }
 
         var bestCoarse = -MaxOffsetFrames + (ArgMax(coarse) * CoarseStepFrames);
-        var (bestOffset, score) = Refine(bestCoarse, offset => Sum(windows, series, offset).Phi());
+        var (bestOffset, score) = Refine(bestCoarse, offset => Total(windows, series, offset).Correlation());
 
         // The best rival more than 2 s away, refined the way the best match was: compared at its coarse
         // 100 ms sample, a rival could read up to half a step low and make the margin look clearer than
@@ -129,7 +150,7 @@ public static class OffsetSearch
 
         if (rival != int.MinValue)
         {
-            var (rivalOffset, rivalScore) = Refine(rival, offset => Sum(windows, series, offset).Phi());
+            var (rivalOffset, rivalScore) = Refine(rival, offset => Total(windows, series, offset).Correlation());
             if (Math.Abs(rivalOffset - bestOffset) > MarginExclusionFrames)
             {
                 outside = Math.Max(outside, rivalScore);
@@ -140,15 +161,17 @@ public static class OffsetSearch
         for (var w = 0; w < windows.Count; w++)
         {
             var window = windows[w];
-            if (window.SpeechFrames.Length < MinUsableFrames
-                || series.Count(window, bestOffset).CueFrames < MinUsableFrames)
+            if (series.Sum(window, bestOffset).CueFrames < MinUsableFrames)
             {
                 continue;
             }
 
             var own = -MaxOffsetFrames + (ArgMax(perWindow[w]) * CoarseStepFrames);
-            var (ownBest, _) = Refine(own, offset => series.Count(window, offset).Phi());
-            windowOffsets.Add((long)ownBest * Frame);
+            var (ownBest, ownScore) = Refine(own, offset => series.Sum(window, offset).Correlation());
+            if (ownScore >= MinWindowScore)
+            {
+                windowOffsets.Add((long)ownBest * Frame);
+            }
         }
 
         return new SyncEstimate((long)bestOffset * Frame, ratio, score, Margin(score, outside), windowOffsets);
@@ -187,12 +210,12 @@ public static class OffsetSearch
         return (bestOffset, bestScore);
     }
 
-    private static Counts Sum(List<Prepared> windows, CueSeries series, int offset)
+    private static Sums Total(List<Prepared> windows, CueSeries series, int offset)
     {
-        var total = default(Counts);
+        var total = default(Sums);
         foreach (var window in windows)
         {
-            total += series.Count(window, offset);
+            total += series.Sum(window, offset);
         }
 
         return total;
@@ -212,43 +235,61 @@ public static class OffsetSearch
         return best;
     }
 
-    /// <summary>A window on the grid: where it starts and the frames in it that are speech.</summary>
-    private sealed record Prepared(int StartFrame, int Length, int[] SpeechFrames)
+    /// <summary>
+    /// A window on the grid, its activity standardized to mean 0 and variance 1 so that stretches of
+    /// different loudness weigh the same when they are pooled. A stretch with no variation at all —
+    /// digital silence, or nothing decoded — has nothing to correlate and is left out (null).
+    /// </summary>
+    private sealed record Prepared(int StartFrame, double[] Standardized)
     {
-        public static Prepared From(SpeechWindow window)
+        public int Length => Standardized.Length;
+
+        public static Prepared? From(SpeechWindow window)
         {
-            var speech = new List<int>();
-            for (var i = 0; i < window.Speech.Length; i++)
+            var values = window.Speech;
+            if (values.Length == 0)
             {
-                if (window.Speech[i])
-                {
-                    speech.Add(i);
-                }
+                return null;
             }
 
-            return new Prepared((int)(window.StartMs / Frame), window.Speech.Length, speech.ToArray());
+            var mean = values.Average();
+            var variance = values.Sum(value => (value - mean) * (value - mean)) / values.Length;
+            if (!(variance > 1e-12))
+            {
+                return null;
+            }
+
+            var deviation = Math.Sqrt(variance);
+            var standardized = new double[values.Length];
+            for (var i = 0; i < values.Length; i++)
+            {
+                standardized[i] = (values[i] - mean) / deviation;
+            }
+
+            return new Prepared((int)(window.StartMs / Frame), standardized);
         }
     }
 
-    /// <summary>The 2×2 table behind one phi: frames, speech frames, cue frames, and both at once.</summary>
-    private readonly record struct Counts(long Frames, long SpeechFrames, long CueFrames, long Both)
+    /// <summary>
+    /// The sums behind one correlation: frames, frames with a cue showing, and the standardized activity
+    /// added up over those. With the activity at mean 0 and variance 1 the correlation with an on/off
+    /// series reduces to <c>Dot / √(Cue × (Frames − Cue))</c>, and pooled windows add up the same way.
+    /// </summary>
+    private readonly record struct Sums(long Frames, long CueFrames, double Dot)
     {
-        public static Counts operator +(Counts a, Counts b) =>
-            new(a.Frames + b.Frames, a.SpeechFrames + b.SpeechFrames, a.CueFrames + b.CueFrames, a.Both + b.Both);
+        public static Sums operator +(Sums a, Sums b) =>
+            new(a.Frames + b.Frames, a.CueFrames + b.CueFrames, a.Dot + b.Dot);
 
-        public double Phi()
+        public double Correlation()
         {
-            double n = Frames;
-            double speech = SpeechFrames;
-            double cue = CueFrames;
-            var denominator = Math.Sqrt(speech * (n - speech) * cue * (n - cue));
-            return denominator <= 0 ? 0 : ((n * Both) - (speech * cue)) / denominator;
+            var denominator = Math.Sqrt((double)CueFrames * (Frames - CueFrames));
+            return denominator <= 0 ? 0 : Dot / denominator;
         }
     }
 
     /// <summary>
     /// Whether a cue is showing at each frame of the stretch of timeline the search can reach, with the
-    /// cues already scaled by the ratio, plus a running count so any window's cue time is one subtraction.
+    /// cues already scaled by the ratio and their tails trimmed.
     /// </summary>
     private sealed class CueSeries
     {
@@ -277,8 +318,9 @@ public static class OffsetSearch
             var delta = new int[length + 1];
             foreach (var cue in cues)
             {
+                var spokenUntil = Math.Max(cue.StartMs + MinCueMs, cue.EndMs - CueTailTrimMs);
                 var from = Math.Clamp((long)Math.Round(cue.StartMs * ratio / Frame) - origin, 0, length);
-                var to = Math.Clamp((long)Math.Round(cue.EndMs * ratio / Frame) - origin, 0, length);
+                var to = Math.Clamp((long)Math.Round(Math.Min(spokenUntil, cue.EndMs) * ratio / Frame) - origin, 0, length);
                 if (to > from)
                 {
                     delta[from]++;
@@ -297,19 +339,23 @@ public static class OffsetSearch
             return new CueSeries(origin, showing);
         }
 
-        /// <summary>The table for one window with the cues moved later by <paramref name="offset"/> frames.</summary>
-        public Counts Count(Prepared window, int offset)
+        /// <summary>The sums for one window with the cues moved later by <paramref name="offset"/> frames.</summary>
+        public Sums Sum(Prepared window, int offset)
         {
             // Media frame m shows the cue frame m - offset.
             var first = window.StartFrame - offset - _origin;
-            var both = 0L;
-            foreach (var frame in window.SpeechFrames)
+            var dot = 0.0;
+            var activity = window.Standardized;
+            for (var i = 0; i < activity.Length; i++)
             {
-                both += _showing[first + frame];
+                if (_showing[first + i] != 0)
+                {
+                    dot += activity[i];
+                }
             }
 
             var cueFrames = _prefix[first + window.Length] - _prefix[first];
-            return new Counts(window.Length, window.SpeechFrames.Length, cueFrames, both);
+            return new Sums(window.Length, cueFrames, dot);
         }
     }
 }
