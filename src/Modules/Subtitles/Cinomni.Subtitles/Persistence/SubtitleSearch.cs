@@ -66,13 +66,14 @@ public sealed class SubtitleSearch
     }
 
     /// <summary>Searching → Evaluated: records the scored candidates the providers returned.</summary>
-    public void RecordCandidates(IEnumerable<(string Provider, string Release, int Score, bool Hi, string DownloadRef)> candidates, DateTimeOffset now)
+    public void RecordCandidates(
+        IEnumerable<(string Provider, string Release, int Score, bool Hi, string DownloadRef, string Reason)> candidates, DateTimeOffset now)
     {
         Require(SubtitleSearchState.Searching);
         foreach (var candidate in candidates)
         {
             Candidates.Add(SubtitleCandidate.Create(
-                Id, Candidates.Count, candidate.Provider, candidate.Release, candidate.Score, candidate.Hi, candidate.DownloadRef));
+                Id, Candidates.Count, candidate.Provider, candidate.Release, candidate.Score, candidate.Hi, candidate.DownloadRef, candidate.Reason));
         }
 
         Transition(SubtitleSearchState.Evaluated, now);

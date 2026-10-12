@@ -32,6 +32,10 @@ public sealed class SubtitleOptions
     /// <summary>Whether to look for a forced subtitle.</summary>
     public bool Forced { get; set; }
 
-    /// <summary>The minimum candidate score to accept (below it, the search waits — adaptive).</summary>
-    public int MinScore { get; set; } = 5;
+    /// <summary>
+    /// The minimum candidate score to accept (below it, the search waits — adaptive). The default
+    /// takes a candidate only once its identity is matched (<see cref="Providers.SubtitleCandidateScorer"/>):
+    /// by title, year and episode number at the least. A candidate nothing confirms scores below it.
+    /// </summary>
+    public int MinScore { get; set; } = 40;
 }

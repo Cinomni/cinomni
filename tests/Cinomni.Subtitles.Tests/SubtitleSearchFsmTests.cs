@@ -11,8 +11,8 @@ public sealed class SubtitleSearchFsmTests
     private static SubtitleSearch NewSearch() =>
         SubtitleSearch.Create(Guid.NewGuid(), "en", forced: false, hearingImpaired: false, Now);
 
-    private static readonly (string, string, int, bool, string)[] Candidates =
-        [("fake", "Movie.2024", 90, false, "file-1")];
+    private static readonly (string, string, int, bool, string, string)[] Candidates =
+        [("fake", "Movie.2024", 90, false, "file-1", "Same film by title.")];
 
     [Fact]
     public void Create_starts_requested()

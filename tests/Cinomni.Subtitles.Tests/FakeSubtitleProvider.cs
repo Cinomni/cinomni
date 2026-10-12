@@ -35,6 +35,12 @@ internal sealed class FakeSubtitleProvider : ISubtitleProvider
 
     public Exception? DownloadFailure { get; set; }
 
+    /// <summary>Content for a particular download reference, overriding <see cref="Content"/> for it.</summary>
+    public Dictionary<string, byte[]> ContentFor { get; } = [];
+
+    /// <summary>Every download reference the module fetched, in order.</summary>
+    public ConcurrentQueue<string> Downloads { get; } = [];
+
     public Task<ProviderDownload> DownloadAsync(string downloadRef, CancellationToken cancellationToken = default)
     {
         if (DownloadFailure is not null)
@@ -42,6 +48,7 @@ internal sealed class FakeSubtitleProvider : ISubtitleProvider
             throw DownloadFailure;
         }
 
-        return Task.FromResult(new ProviderDownload(Content, SubtitleFormat.Srt));
+        Downloads.Enqueue(downloadRef);
+        return Task.FromResult(new ProviderDownload(ContentFor.GetValueOrDefault(downloadRef, Content), SubtitleFormat.Srt));
     }
 }

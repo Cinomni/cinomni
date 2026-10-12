@@ -45,6 +45,23 @@ under the rules in *Versioning* below.
 
 ### Fixed
 
+- **Subtitles are downloaded from OpenSubtitles at all.** Every search failed against the real API:
+  it answers anything but its own spelling of the search address with a redirect, which Cinomni does
+  not follow, and refuses a download that does not ask for JSON. Both are fixed.
+- **The subtitle chosen is the one for your title.** A candidate used to be scored only by its rating
+  on the provider, which is 0 for most files, so nothing was accepted. With the threshold lowered,
+  the first file returned won, and that was sometimes another film that only shared a word with the
+  release name. A candidate now has to match the title it is for: the same IMDb id, or the same title
+  and year for a film, and the same series and episode number for an episode. A subtitle for anything
+  else scores 0. Among the ones that match, the same release group, source and resolution as your
+  video ranks first, then downloads and trusted uploaders, and a machine translation ranks last. Films
+  are searched by IMDb id, or by title and year, instead of by release name. Each candidate keeps the
+  reason for its score. `Subtitles__MinScore` now defaults to 40, which requires a matched identity.
+- **A subtitle in the wrong alphabet is passed over.** A file labelled English but written in Hebrew
+  was downloaded as the English subtitle. A download is now checked against the alphabet of its
+  language, and up to three candidates are tried in order before the search waits for its next
+  attempt.
+
 - **A converted title is no longer marked watched early.** When the server had no runtime for a file,
   the player reported the length of the converted stream so far as the film's length; catching up with
   a slow conversion then marked the title watched a minute in, and the next play started from that wrong

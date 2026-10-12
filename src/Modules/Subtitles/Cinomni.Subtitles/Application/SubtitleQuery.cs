@@ -30,7 +30,7 @@ public sealed class SubtitleQuery(SubtitlesDbContext dbContext) : ISubtitleQuery
 
         var candidates = search.Candidates
             .OrderByDescending(c => c.Score)
-            .Select(c => new SubtitleCandidateSummary(c.Provider, c.Release, c.Score, c.HearingImpaired))
+            .Select(c => new SubtitleCandidateSummary(c.Provider, c.Release, c.Score, c.HearingImpaired, c.Reason))
             .ToList();
 
         SubtitleAssetSummary? asset = null;

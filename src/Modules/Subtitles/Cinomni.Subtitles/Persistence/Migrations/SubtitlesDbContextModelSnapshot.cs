@@ -119,6 +119,14 @@ namespace Cinomni.Subtitles.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("provider");
 
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasDefaultValue("")
+                        .HasColumnName("reason");
+
                     b.Property<string>("Release")
                         .IsRequired()
                         .HasMaxLength(200)

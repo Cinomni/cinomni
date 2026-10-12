@@ -4,17 +4,21 @@ using Cinomni.Library.Contracts;
 namespace Cinomni.Subtitles.Application;
 
 /// <summary>
-/// What Subtitles needs to know about the episode an asset plays: the series title a provider matches
-/// shows on, the numbering that pins the episode, and the series IMDb id when the catalog knows one.
-/// Every member is null for a movie, and <see cref="None"/> is the movie value.
+/// What Subtitles needs to know about the title an asset plays. For an episode: the series title a
+/// provider matches shows on, the numbering that pins the episode, and the series IMDb id when the
+/// catalog knows one. For a movie those are null and the movie's own catalog title, year and IMDb id
+/// are filled instead: what a candidate's identity is checked against. <see cref="None"/> knows nothing.
 /// </summary>
 public sealed record EpisodeContext(
     string? SeriesTitle,
     int? SeasonNumber,
     int? EpisodeNumber,
-    string? ParentImdbId)
+    string? ParentImdbId,
+    string? MovieTitle = null,
+    int? MovieYear = null,
+    string? MovieImdbId = null)
 {
-    /// <summary>The context of a movie: no series, no numbering. Leaves the provider query as it shipped.</summary>
+    /// <summary>Nothing known: no series, no numbering, no movie identity.</summary>
     public static readonly EpisodeContext None = new(null, null, null, null);
 }
 
@@ -37,20 +41,24 @@ public sealed class EpisodeContextResolver(ICatalogQuery catalog, ICatalogSeries
         var workId = new WorkId(asset.Asset.WorkId);
         var unitIds = asset.UnitIds ?? [];
 
-        // A movie's unit is its own work (the movie path is UnitIds = [WorkId]) — nothing to resolve.
-        if (unitIds.Count == 0 || unitIds.All(id => id == asset.Asset.WorkId))
-        {
-            return EpisodeContext.None;
-        }
-
         var work = await catalog.GetByIdAsync(workId, cancellationToken);
-        if (work is null || work.Kind != WorkKind.Series)
+        if (work is null)
         {
             return EpisodeContext.None;
         }
 
-        var parentImdbId = work.ExternalIds
+        var imdbId = work.ExternalIds
             .FirstOrDefault(e => e.Provider == MetadataProvider.Imdb)?.Value;
+
+        // A movie's unit is its own work (the movie path is UnitIds = [WorkId]): its identity is the work's.
+        if (work.Kind != WorkKind.Series || unitIds.Count == 0 || unitIds.All(id => id == asset.Asset.WorkId))
+        {
+            return work.Kind == WorkKind.Series
+                ? EpisodeContext.None
+                : new EpisodeContext(null, null, null, null, work.Title, work.Year, imdbId);
+        }
+
+        var parentImdbId = imdbId;
 
         var episodes = new List<EpisodeSummary>();
         foreach (var unitId in unitIds)
