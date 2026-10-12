@@ -83,12 +83,12 @@ public sealed class OpenSubtitlesQueryTests
     }
 
     [Fact]
-    public async Task A_movie_without_an_imdb_id_is_searched_by_its_catalog_title_and_year_not_its_release_name()
+    public async Task A_movie_without_an_imdb_id_is_searched_by_its_catalog_title_and_year_in_the_text_not_its_release_name()
     {
         var query = await SearchQueryFor(new SubtitleProviderQuery(
             "classicalhd-sintel.2010.en-1080p", "en", HearingImpaired: false, Title: "Sintel", Year: 2010));
 
-        Assert.Equal("?languages=en&query=sintel&year=2010", query);
+        Assert.Equal("?languages=en&query=sintel+2010", query);
     }
 
     [Fact]
