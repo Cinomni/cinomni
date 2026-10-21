@@ -38,6 +38,9 @@ internal sealed record EvaluationRequest(
     public bool IsSeries =>
         SeriesKinds.Any(k => string.Equals(k, ContentKind, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>True when the request is for a film, which is what turns the film identity check on.</summary>
+    public bool IsMovie => string.Equals(ContentKind, "Movie", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>True when a season pack should outrank a single episode (a season-level goal).</summary>
     public bool PrefersCoverage =>
         string.Equals(ContentKind, "Season", StringComparison.OrdinalIgnoreCase)
@@ -62,7 +65,7 @@ internal static class EpisodeMatcher
 
     /// <summary>
     /// The identity reasons for one candidate, in the order the explainability UI renders them.
-    /// Empty for a movie request — a movie evaluation must look exactly as it always did.
+    /// Empty for a movie request, which <see cref="MovieMatcher"/> judges.
     /// </summary>
     public static IReadOnlyList<EvaluationReason> Match(ParsedRelease parsed, EvaluationRequest request)
     {
@@ -267,7 +270,7 @@ internal static class EpisodeMatcher
             : "any";
     }
 
-    private static string DescribeNumbering(EpisodeNumbering numbering)
+    internal static string DescribeNumbering(EpisodeNumbering numbering)
     {
         if (numbering.AirDate is DateOnly airDate)
         {
@@ -296,9 +299,9 @@ internal static class EpisodeMatcher
     /// <c>&lt;normalized-title-with-dashes&gt;[.year][.numbering][.quality]…</c> and a normalized
     /// title contains only letters, digits and spaces — never a '.' — so its first segment is exactly
     /// the title the parser extracted. Reading it back keeps ONE normalisation of the release side in
-    /// the repository instead of a second set of rules here.
+    /// the repository instead of a second set of rules here; <see cref="MovieMatcher"/> reads it too.
     /// </summary>
-    private static string NormalizedTitleOf(ParsedRelease parsed)
+    internal static string NormalizedTitleOf(ParsedRelease parsed)
     {
         var key = parsed.Identity.CanonicalKey;
         var cut = key.IndexOf('.', StringComparison.Ordinal);

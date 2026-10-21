@@ -225,10 +225,10 @@ public sealed class SeriesDecisionTests : IAsyncLifetime
     [Fact]
     public async Task A_movie_search_is_still_judged_by_the_movie_profile()
     {
-        // The movie regression, stated as a fact rather than assumed.
+        // A film is judged by the movie profile and by the film identity check, never by the series ones.
         var searchId = Uuid7.New();
         await SeedSeriesSearchAsync(searchId, "Movie", season: null, episode: null, unitIds: [],
-            results: [("g1", "The.Matrix.1999.1080p.BluRay.x264-GRP")], term: "The Matrix");
+            results: [("g1", "The.Matrix.1999.1080p.BluRay.x264-GRP")], term: "The Matrix", year: 1999);
 
         await EvaluateAsync(searchId, Uuid7.New());
 
@@ -237,7 +237,9 @@ public sealed class SeriesDecisionTests : IAsyncLifetime
         var evaluation = await db.ReleaseEvaluations.Include(e => e.Reasons).SingleAsync(e => e.SearchId == searchId);
         var profile = await db.Profiles.SingleAsync(p => p.Id == evaluation.ProfileId);
         Assert.Equal(ProfileScope.Movie, profile.AppliesTo);
-        Assert.DoesNotContain(evaluation.Reasons, r => r.Rule.StartsWith("MatchesRequested", StringComparison.Ordinal));
+        var identity = Assert.Single(evaluation.Reasons, r => r.Rule.StartsWith("MatchesRequested", StringComparison.Ordinal));
+        Assert.Equal("MatchesRequestedMovie", identity.Rule);
+        Assert.Equal(ReasonOutcome.Pass, identity.Outcome);
     }
 
     // -- helpers ---------------------------------------------------------------------------------

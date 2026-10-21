@@ -4,6 +4,23 @@ Every release an indexer returns is judged against an **acquisition profile** be
 downloaded. The judgement is stored with its reasons, so the question "why did it take *this* one?"
 always has an answer.
 
+## Is it the title that was asked for?
+
+Before the profile, a release has to be the title the search was for. An indexer that searches by
+text answers with anything carrying the words, so Cinomni compares the release's own title and year
+with the catalog's:
+
+- **A film** needs the same title and, when the release states a year, the same year. A longer or
+  shorter name is another film ("Teddy Swims Live at Coachella" is not "Teddy"), and a release
+  numbered as an episode is never a film.
+- **An episode** needs the same series title, and the requested season and episode. A season pack
+  covers every episode of its season.
+
+Punctuation, accents and a leading "The" do not count, but any other word does: "The Office US" is not
+"The Office". A film whose releases use another name, such as its original-language title, or date it
+a year off, is rejected for now; **Download anyway** takes it by hand. The rejection shows both sides, for example *expected
+teddy (2021), actual teddy swims live at coachella (2026)*.
+
 ## The default profiles
 
 Cinomni creates two profiles on first start: **Default** for movies and **Default (Series)** for
@@ -53,7 +70,8 @@ Change both settings under **Console → Profiles**.
 On a title's page (and in **Activity**) you can see every release that was evaluated:
 
 - whether it was **accepted** or **rejected**;
-- the reasons: quality not allowed, too small, below what is on disk, blocked, and so on;
+- the reasons: not the title that was asked for, quality not allowed, too small, below what is on
+  disk, blocked, and so on;
 - its score and the formats that contributed to it.
 
 ## Choosing by hand

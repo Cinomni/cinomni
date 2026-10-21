@@ -10,7 +10,17 @@ under the rules in *Versioning* below.
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- **A film is downloaded only when the release is that film.** A film's releases were judged on
+  quality, size and format alone. An indexer that searches by text answers with anything carrying the
+  words, so a search for "Teddy" (2021) accepted a 2160p Teddy Swims concert, which was downloaded and
+  filed as the film, and series episodes with "Teddy" in their titles. A film release now needs the
+  catalog's title and, when it states a year, the catalog's year exactly: the same search offered the
+  French "Teddy" (2020) for the Tamil one. A release numbered as an episode is never a film. Each
+  rejection shows what was compared. A film whose releases use another name, such as its
+  original-language title, or another year, is now rejected; **Download anyway** still takes it by
+  hand. Files already in the library are not checked again.
 
 ## [0.1.0-alpha.3] - 2026-10-21
 
