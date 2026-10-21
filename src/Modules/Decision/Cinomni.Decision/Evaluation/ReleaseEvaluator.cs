@@ -47,15 +47,16 @@ internal sealed class ReleaseEvaluator
     /// </summary>
     /// <remarks>
     /// 2.0.0 adds the identity checks in <see cref="EpisodeMatcher"/> — before it, no stage of the
-    /// pipeline verified that a candidate was the episode that had been requested. It moves in step
-    /// with <c>ReleaseParser.Version</c>: both constants are persisted per row, and letting them
-    /// drift would leave the audit trail ambiguous about which change produced a given verdict.
+    /// pipeline verified that a candidate was the episode that had been requested. It moved in step
+    /// with <c>ReleaseParser.Version</c>, which changed in the same release. 3.0.0 adds the film
+    /// identity check in <see cref="MovieMatcher"/>; the parser did not change and stays at 2.0.0.
+    /// Both constants are persisted per row, so each names the rule set that produced it.
     /// </remarks>
-    public const string Version = "2.0.0";
+    public const string Version = "3.0.0";
 
     /// <param name="request">
-    /// What the search asked for. Null (or a movie request) emits no identity reasons at all, which
-    /// is what keeps a movie evaluation byte-for-byte what it always was.
+    /// What the search asked for. Null emits no identity reasons at all: there is nothing to compare
+    /// the release with.
     /// </param>
     /// <param name="current">
     /// What is already on disk for it, or null when nothing is. Null means the missing-title path,
@@ -75,6 +76,7 @@ internal sealed class ReleaseEvaluator
         if (request is not null)
         {
             reasons.AddRange(EpisodeMatcher.Match(parsed, request));
+            reasons.AddRange(MovieMatcher.Match(parsed, request));
         }
 
         var allowed = profile.AllowedQualities.FirstOrDefault(

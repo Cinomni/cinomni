@@ -174,9 +174,9 @@ public sealed class EpisodeMatchingTests
     }
 
     [Fact]
-    public void A_movie_evaluation_emits_no_identity_reasons_at_all()
+    public void A_movie_evaluation_emits_none_of_the_series_reasons()
     {
-        // The movie regression: nothing about the shipped path may change shape.
+        // A film has no season or episode to check; MovieMatchingTests covers what it is checked for.
         var profile = Profile().WithQuality(QualitySource.Bluray, QualityResolution.R1080p, rank: 50);
 
         var outcome = _evaluator.Evaluate(
@@ -186,7 +186,7 @@ public sealed class EpisodeMatchingTests
             Request("The Matrix", contentKind: "Movie"));
 
         Assert.Equal(Verdict.Accepted, outcome.Verdict);
-        Assert.DoesNotContain(outcome.Reasons, r => r.Rule.StartsWith("MatchesRequested", StringComparison.Ordinal));
+        Assert.DoesNotContain(outcome.Reasons, r => r.Rule is EpisodeMatcher.SeriesRule or EpisodeMatcher.SeasonRule or EpisodeMatcher.EpisodeRule);
     }
 
     [Fact]
