@@ -10,6 +10,24 @@ under the rules in *Versioning* below.
 
 ## Unreleased
 
+Nothing yet.
+
+## [0.1.0-alpha.3] - 2026-10-21
+
+**Your own password, subtitles that fit, and a straight answer when a video is too heavy.** An account
+can change its password. Subtitles now download from OpenSubtitles, are checked to be for your title,
+and are re-timed against the audio. A conversion the server cannot keep up with stops and says what to
+change, instead of buffering. Still an alpha: read *Versioning* for what that promises.
+
+**Known gaps in this alpha:**
+
+- A 4K HDR source that has to be converted on the CPU still does not play at the default limits. It now
+  stops after a minute and says which setting to change (see *Changed*).
+- No real GPU and no real VPN tunnel drop have been tested (see *Accepted risks* in ROADMAP.md).
+- Dolby Vision profile 5 tone-maps with wrong colours.
+- Moving a single title to a collection by hand, or releasing its pin, has no console screen yet (the
+  API has both).
+
 ### Added
 
 - **Change your own password.** Your account → Password asks for the current password and the new one
@@ -68,7 +86,6 @@ under the rules in *Versioning* below.
   was downloaded as the English subtitle. A download is now checked against the alphabet of its
   language, and up to three candidates are tried in order before the search waits for its next
   attempt.
-
 - **A converted title is no longer marked watched early.** When the server had no runtime for a file,
   the player reported the length of the converted stream so far as the film's length; catching up with
   a slow conversion then marked the title watched a minute in, and the next play started from that wrong
@@ -79,6 +96,18 @@ under the rules in *Versioning* below.
   rotated. It now leaves those out, and every service in `docker-compose.yml` and the VPN overlay
   keeps at most three 10 MB log files. Recreate the containers (`docker compose up -d`) for the
   rotation to apply; the logs already written stay until then.
+
+### Upgrade notes
+
+Take a backup first, as for any upgrade. Nothing needs doing by hand: the migrations run on start.
+
+- `docker compose pull && docker compose up -d` recreates the containers, which is also what turns
+  the log rotation on.
+- `Subtitles__MinScore` now defaults to 40. If you set it yourself, a value under 40 accepts a
+  subtitle whose title could not be confirmed.
+- With SubDL configured, earlier versions could download a second subtitle for a language the video
+  already carried, and sometimes one for another title. Those files stay beside the video
+  (`<name>.<lang>.srt`); delete them by hand if you do not want them.
 
 ## [0.1.0-alpha.2] - 2026-09-26
 
