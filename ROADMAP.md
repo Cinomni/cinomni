@@ -26,7 +26,7 @@ flowchart LR
 ```
 
 **The MVP is done.** Milestones M0–M4 are complete and confirmed on linux/amd64, and a good deal of
-post-MVP depth has landed on top. The current version is **0.1.0-alpha.2**, the second
+post-MVP depth has landed on top. The current version is **0.1.0-alpha.3**, the third
 public alpha. See the *Release plan* below for what comes before a stable 1.0.0.
 
 | Milestone | What it delivered | Status |
@@ -47,7 +47,8 @@ criteria are met.
 | Version | Stage | What it is | Status |
 |---|---|---|---|
 | **0.1.0-alpha.1** | Alpha | Everything built so far: both slices, the MVP hardening and the post-MVP depth | Released |
-| **0.1.0-alpha.2** | Alpha | Rule-based collections, pulled forward from *Next* into 0.1.0 | Current |
+| **0.1.0-alpha.2** | Alpha | Rule-based collections, pulled forward from *Next* into 0.1.0 | Released |
+| **0.1.0-alpha.3** | Alpha | Password change, subtitles from OpenSubtitles synced to the audio, a clear stop for a conversion the server cannot keep up with | Current |
 | **0.1.0-alpha.N** | Alpha | Fixes and the gaps below; capabilities may still land | Planned |
 | **0.1.0-beta.1** | Beta | Capabilities frozen for 0.1.0; fixes only from here | When the beta criteria are met |
 | **0.1.0-rc.1** | Release candidate | No known blocker | When the beta has run clean |
@@ -59,9 +60,9 @@ criteria are met.
 
 - The web player has had a manual pass on real titles: a film, a series, a 4K HDR source, an audio
   and a quality change, text and picture subtitles.
-- An account can change its own password.
+- An account can change its own password. Done in 0.1.0-alpha.3.
 - A 4K source on the default resource limits either plays or fails with a message that says why and
-  what to change.
+  what to change. Done in 0.1.0-alpha.3: it fails with that message.
 - One upgrade from an alpha to the next alpha has been done on a real installation, with a backup
   taken first.
 
@@ -82,7 +83,7 @@ criteria are met.
 | **Decisions** | See why every release was taken or refused; set quality profiles and a cutoff; search by hand and override deliberately |
 | **Downloads** | Download with the built-in libtorrent sidecar, optionally only through a VPN that fails closed; resume after any restart |
 | **Import** | Hardlink or copy, rename, land season packs, upgrade and recycle the old file, repair names already on disk |
-| **Subtitles** | Fetch wanted languages from two providers and show them in the player, or burn picture subtitles in |
+| **Subtitles** | Fetch wanted languages from two providers, check each download against the audio and re-time it, and show them in the player, or burn picture subtitles in |
 | **Playback** | Play in the browser with Direct Play, remux or HLS; choose audio, subtitles, quality and speed; resume where you left off |
 | **Transcoding** | Use VAAPI, Quick Sync, NVENC or AMF once they pass a real test; tone-map HDR and Dolby Vision; tune everything live |
 | **Household** | Invite accounts, approve requests, cap open requests per account, enable two-factor sign-in |
@@ -93,9 +94,9 @@ criteria are met.
 | Next (likely candidates) | Later (deliberately deferred) | Out of scope for now |
 |---|---|---|
 | **Usenet**: scope reopened; the indexer model already speaks Newznab | Python subtitle worker (many providers, sync, mods) | Music, books, comics, images |
-| **Subtitle sync**: the `Syncing` state exists, the step does not | WebSocket / remote control across sessions | Jellyfin-compatible client API |
-| **The two hardware drills**: a real VPN drop, a real GPU | High availability, multi-server | Native mobile and TV apps |
-| **Dolby Vision profile 5** tone mapping | | Kubernetes, plugins, federation |
+| **The two hardware drills**: a real VPN drop, a real GPU | WebSocket / remote control across sessions | Jellyfin-compatible client API |
+| **Dolby Vision profile 5** tone mapping | High availability, multi-server | Native mobile and TV apps |
+| | | Kubernetes, plugins, federation |
 | | | Native Windows/macOS as a *supported* deployment |
 
 A per-account
