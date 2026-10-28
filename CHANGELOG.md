@@ -16,6 +16,11 @@ under the rules in *Versioning* below.
   `WIREGUARD_PUBLIC_KEY`, `WIREGUARD_ENDPOINT_IP` and `WIREGUARD_ENDPOINT_PORT` from `.env`. The
   endpoint must be an IP. Leave them empty for a provider on gluetun's list. The private key stays
   in `.env` and is not a setting.
+- **Move one title, or release its pin, from the console.** Console → Collections → Place a title
+  searches the library (or lists the titles already pinned), moves a title onto a shelf — which pins
+  it, so rules leave it there — and releases a pin so the rules place it again. The confirmation
+  warns when the move would let more people see the title, or hide it from people who can see it now.
+  Until now both actions existed only as API calls.
 
 ### Fixed
 

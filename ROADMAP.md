@@ -78,7 +78,7 @@ criteria are met.
 
 | Area | You can… |
 |---|---|
-| **Library** | Browse movies and series with artwork, genres and a regional age rating; group titles into collections, by hand or by rules you preview first; limit what an account sees |
+| **Library** | Browse movies and series with artwork, genres and a regional age rating; group titles into collections, by hand from the console or by rules you preview first; limit what an account sees |
 | **Finding releases** | Use Torznab/Newznab indexers or declarative definitions, from catalog sources you subscribe to or written by hand, including private trackers that sign in and sit behind a challenge |
 | **Decisions** | See why every release was taken or refused; set quality profiles and a cutoff; search by hand and override deliberately |
 | **Downloads** | Download with the built-in libtorrent sidecar, optionally only through a VPN that fails closed; resume after any restart |

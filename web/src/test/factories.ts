@@ -20,6 +20,7 @@ export function aWork(overrides: Partial<Work> = {}): Work {
     episodeCount: 0,
     availableEpisodeCount: 0,
     collectionId: 'collection-1',
+    collectionPinned: false,
     awaitingMetadata: false,
     externalIds: [],
     overview: null,

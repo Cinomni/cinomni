@@ -143,6 +143,11 @@ export interface Work {
   availableEpisodeCount: number
   collectionId: string | null
   /**
+   * Placed on its shelf by hand. Rules leave a pinned title alone until the pin is released.
+   * A member who can already see the title can read this; only the console acts on it.
+   */
+  collectionPinned: boolean
+  /**
    * Held back from members until its metadata arrives: it was added while collection rules exist, and
    * they cannot read its genres or rating yet. Only an administrator ever receives `true`.
    */
@@ -184,6 +189,11 @@ export interface WorkPageQuery {
   /** A provider genre label, matched exactly. */
   genre?: string
   sort?: WorkSortKey
+  /**
+   * When set, only titles placed by hand (`true`) or only titles the rules may still move (`false`).
+   * Omitted does not filter.
+   */
+  pinned?: boolean
 }
 export interface GenreCount {
   genre: string
