@@ -2,11 +2,15 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Cinomni.Downloads.Usenet;
+using static Cinomni.Downloads.Tests.YencWire;
 
 namespace Cinomni.Downloads.Tests;
 
 public sealed class UsenetTests
 {
+    /// <summary>How long a session may wait for a server that has gone quiet, where a test cannot wait a minute.</summary>
+    private static readonly TimeSpan Brief = TimeSpan.FromMilliseconds(300);
+
     [Fact]
     public void An_nzb_names_the_quoted_file_and_orders_its_segments()
     {
@@ -163,69 +167,71 @@ public sealed class UsenetTests
         await writer.WriteLineAsync(".");
     }
 
-    /// <summary>1000 bytes that cover every value several times over and start with 4.</summary>
-    private static byte[] AllByteValues() =>
-        [.. Enumerable.Range(0, 1000).Select(i => (byte)((i + 4) % 256))];
-
-    private static string Wire(IEnumerable<string> lines) => string.Join("\r\n", lines) + "\r\n";
-
-    /// <summary>A yEnc article body as the wire carries it: one character per byte.</summary>
-    private static List<string> YencArticle(byte[] plain, string? trailer = null, string? partHeader = null)
+    [Fact]
+    public async Task A_server_that_never_greets_is_given_up_on()
     {
-        var lines = new List<string> { $"=ybegin line=128 size={plain.Length} name=Film.mkv" };
-        if (partHeader is not null)
-        {
-            lines.Add(partHeader);
-        }
+        await using var server = new FakeNntpServer { Behavior = _ => ConnectionBehavior.Silent };
 
-        lines.AddRange(EncodeLines(plain));
-        lines.Add(trailer is null ? $"=yend size={plain.Length}" : $"=yend size={plain.Length} {trailer}");
-        return lines;
+        await Within(Assert.ThrowsAsync<NntpUnavailableException>(
+            () => NntpClient.ConnectAsync(server.Options, CancellationToken.None, Brief)));
     }
 
-    private static IEnumerable<string> EncodeLines(byte[] plain)
+    [Fact]
+    public async Task A_server_that_stops_answering_is_given_up_on()
     {
-        const int lineLength = 128;
-        var line = new StringBuilder();
-        foreach (var value in plain)
-        {
-            var shifted = (byte)(value + 42);
-            var critical = shifted is 0 or 10 or 13 or (byte)'=';
-            if (line.Length + (critical ? 2 : 1) > lineLength)
-            {
-                yield return line.ToString();
-                line.Clear();
-            }
+        await using var server = new FakeNntpServer { Behavior = _ => ConnectionBehavior.Stall };
+        await using var client = await NntpClient.ConnectAsync(server.Options, CancellationToken.None, Brief);
 
-            if (critical)
-            {
-                line.Append('=').Append((char)(byte)(shifted + 64));
-            }
-            else
-            {
-                line.Append((char)shifted);
-            }
-        }
-
-        if (line.Length > 0)
-        {
-            yield return line.ToString();
-        }
+        await Within(Assert.ThrowsAsync<NntpUnavailableException>(
+            () => client.ArticleAsync("part@example", CancellationToken.None)));
     }
 
-    /// <summary>The bitwise CRC-32, written differently from the one under test so they can disagree.</summary>
-    private static uint ReferenceCrc32(byte[] data)
+    [Fact]
+    public async Task A_server_that_trickles_an_article_is_given_up_on_as_a_whole()
     {
-        var crc = 0xFFFFFFFFu;
-        foreach (var value in data)
-        {
-            crc ^= value;
-            for (var bit = 0; bit < 8; bit++)
-            {
-                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
-            }
-        }
+        // Every line arrives well inside the timeout, so a limit on each read would wait for ever. The
+        // limit is on the article.
+        await using var server = new FakeNntpServer { Behavior = _ => ConnectionBehavior.Trickle };
+        await using var client = await NntpClient.ConnectAsync(server.Options, CancellationToken.None, Brief);
 
-        return ~crc;
+        await Within(Assert.ThrowsAsync<NntpUnavailableException>(
+            () => client.ArticleAsync("part@example", CancellationToken.None)));
     }
+
+    [Fact]
+    public async Task A_caller_that_cancels_is_not_told_the_server_timed_out()
+    {
+        await using var server = new FakeNntpServer { Behavior = _ => ConnectionBehavior.Silent };
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        await Within(Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => NntpClient.ConnectAsync(server.Options, cancel.Token)));
+    }
+
+    [Theory]
+    [InlineData(ConnectionBehavior.Drop)]
+    [InlineData(ConnectionBehavior.Unavailable)]
+    public async Task A_server_that_drops_the_session_or_is_busy_is_unavailable_not_refusing(ConnectionBehavior behavior)
+    {
+        await using var server = new FakeNntpServer { Behavior = _ => behavior };
+
+        await Within(Assert.ThrowsAsync<NntpUnavailableException>(
+            () => NntpClient.ConnectAsync(server.Options, CancellationToken.None, Brief)));
+    }
+
+    [Fact]
+    public async Task A_missing_article_is_a_refusal_and_not_an_outage()
+    {
+        await using var server = new FakeNntpServer();
+        await using var client = await NntpClient.ConnectAsync(server.Options, CancellationToken.None, Brief);
+
+        // Exactly this type: an outage is retried and a missing article never comes back.
+        await Within(Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.ArticleAsync("gone@example", CancellationToken.None)));
+    }
+
+    /// <summary>A test that would wait for ever fails instead of holding the run.</summary>
+    private static async Task Within<T>(Task<T> task) => await task.WaitAsync(TimeSpan.FromSeconds(10));
+
+    private static async Task Within(Task task) => await task.WaitAsync(TimeSpan.FromSeconds(10));
 }
