@@ -131,7 +131,7 @@ public sealed class IndexerCatalogManifestTests
     [InlineData("key", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("version", 0)]
     [InlineData("protocol", "Torznab")]
-    [InlineData("releaseProtocol", "Usenet")]
+    [InlineData("releaseProtocol", "Ftp")]
     [InlineData("defaultPriority", 51)]
     [InlineData("defaultPriority", 0)]
     [InlineData("baseUrls", null)]

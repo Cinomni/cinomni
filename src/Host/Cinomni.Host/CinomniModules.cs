@@ -71,7 +71,8 @@ internal static class CinomniModules
         services.AddDownloadsModule(
             retention.Downloads,
             options => ModuleConfiguration.ApplyTunnelGuard(configuration, options),
-            options => ModuleConfiguration.ApplyTransfers(configuration, options));
+            options => ModuleConfiguration.ApplyTransfers(configuration, options),
+            options => ModuleConfiguration.ApplyUsenet(configuration, options));
         services.AddConfiguredDownloadsAdapters(configuration);
         services.AddImportModule();
         services.AddConfiguredImportAdapters(configuration);

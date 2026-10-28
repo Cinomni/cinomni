@@ -94,7 +94,7 @@ criteria are met.
 
 | Next (likely candidates) | Later (deliberately deferred) | Out of scope for now |
 |---|---|---|
-| **Usenet**: scope reopened; the indexer model already speaks Newznab | Python subtitle worker (many providers, sync, mods) | Music, books, comics, images |
+| **Usenet**: a video-file NZB downloads over NNTP; packed releases are still refused | Python subtitle worker (many providers, sync, mods) | Music, books, comics, images |
 | **The two hardware drills**: a real VPN drop, a real GPU | WebSocket / remote control across sessions | Jellyfin-compatible client API |
 | | High availability, multi-server | Native mobile and TV apps |
 | | | Kubernetes, plugins, federation |
@@ -936,7 +936,7 @@ monitoring; relational library; Direct Play / Remux / basic HLS; explainable pla
 per-user progress; basic external subtitles; local users with per-library access; basic requests;
 Docker Linux amd64; jobs/health/backup/outbox/recovery; layered VPN with kill-switch.
 
-**Out (for now):** music/books/comics/images; file manager and uploads; Usenet; advanced subtitles;
+**Out (for now):** music/books/comics/images; file manager and uploads; Usenet repair and unpacking; advanced subtitles;
 full scene mapping; Jellyfin client-API compatibility; native mobile/TV apps; WebSocket remote
 control; rule-based collections; high availability, Kubernetes,
 multi-server; native Windows/macOS; third-party plugins and federation.

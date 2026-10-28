@@ -63,6 +63,7 @@ public interface IAcquisitionCommands
         string downloadUrl,
         IReadOnlyList<Guid>? unitIds = null,
         AttemptRelease? release = null,
+        string? protocol = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -58,7 +58,8 @@ public sealed record DownloadQueued(
     string ReleaseGuid,
     string DownloadUrl,
     string? SavePath,
-    IReadOnlyList<Guid>? UnitIds = null) : DomainEvent
+    IReadOnlyList<Guid>? UnitIds = null,
+    string? Protocol = null) : DomainEvent
 {
     public override string IdempotencyKey => $"download-queued:{AttemptId}";
 }

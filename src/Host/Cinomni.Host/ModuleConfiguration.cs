@@ -2,6 +2,7 @@ using Cinomni.Downloads;
 using Cinomni.Downloads.Application;
 using Cinomni.Downloads.Contracts;
 using Cinomni.Downloads.Engine;
+using Cinomni.Downloads.Usenet;
 using Cinomni.Import;
 using Cinomni.Import.Application;
 using Cinomni.Import.Probe;
@@ -204,6 +205,21 @@ internal static class ModuleConfiguration
     /// seeding bound set to an empty value or <c>none</c> removes that bound; left out, it keeps the
     /// default.
     /// </summary>
+    /// <summary>
+    /// Reads <c>Downloads:Usenet</c>. An empty host leaves Usenet off: a Usenet release then fails
+    /// with a named reason instead of being handed to the torrent engine. The password is read by
+    /// name only and is not logged.
+    /// </summary>
+    public static void ApplyUsenet(IConfiguration configuration, UsenetOptions options)
+    {
+        var section = configuration.GetSection("Downloads").GetSection("Usenet");
+        options.Host = Text(section, "Host")?.Trim() ?? options.Host;
+        options.Port = Number(section, "Port", options.Port);
+        options.UseTls = section.GetValue<bool?>("UseTls") ?? options.UseTls;
+        options.Username = Text(section, "Username") ?? options.Username;
+        options.Password = Text(section, "Password") ?? options.Password;
+    }
+
     public static void ApplyTransfers(IConfiguration configuration, TransferOptions options)
     {
         var section = configuration.GetSection("Downloads").GetSection("Transfers");

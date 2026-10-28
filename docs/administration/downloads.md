@@ -35,6 +35,28 @@ These are application settings, set in the `cinomni` service's `environment` in 
 Seeding ends when the engine restarts: a finished download is closed rather than added again, because
 re-adding it would download again whatever has been removed from the downloads folder since.
 
+## Usenet
+
+A Newznab release is not given to the torrent engine. Set these on the `cinomni` service if you want
+that release downloaded. Leave the host empty and a Usenet release fails with that reason.
+
+| Setting | Meaning |
+|---|---|
+| `Downloads__Usenet__Host` | The server host name. Empty means Usenet is off. |
+| `Downloads__Usenet__Port` | `563` with TLS, `119` without, when unset. |
+| `Downloads__Usenet__UseTls` | `true` by default. |
+| `Downloads__Usenet__Username` / `__Password` | Optional sign-in. The password is not logged. |
+
+Usenet leaves over this machine's own connection. It does not use the torrent tunnel, and a tunnel
+hold does not stop it. A packed release (rar or par2) is refused and not downloaded: unpacking and
+repair are not built.
+
+A server that does not answer, or drops the connection, does not fail the download: it is tried again
+and carries on from the articles already fetched. If the server has stayed silent for 15 minutes, the
+download fails and the goal looks for another release. An article the server does not have fails it
+at once, because repair is not built and waiting would not bring the article back. The articles are
+kept in the download's folder until it finishes or fails, and are then removed.
+
 ## Egress: direct or through a VPN
 
 `CINOMNI_TORRENT_EGRESS` in `.env` records your choice, and has no default on purpose.

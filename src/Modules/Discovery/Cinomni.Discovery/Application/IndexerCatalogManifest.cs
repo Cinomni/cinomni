@@ -154,10 +154,10 @@ internal static partial class IndexerCatalogManifest
             return Invalid($"'{key}': 'protocol' must be 'Definition'.");
         }
 
-        // The MVP downloads torrents only; a Usenet entry would install an indexer nothing can grab from.
-        if (!string.Equals(dto.ReleaseProtocol, nameof(ReleaseProtocol.Torrent), StringComparison.Ordinal))
+        if (!Enum.TryParse<ReleaseProtocol>(dto.ReleaseProtocol, ignoreCase: false, out var releaseProtocol)
+            || !Enum.IsDefined(releaseProtocol))
         {
-            return Invalid($"'{key}': 'releaseProtocol' must be 'Torrent'.");
+            return Invalid($"'{key}': 'releaseProtocol' must be 'Torrent' or 'Usenet'.");
         }
 
         var baseUrls = ValidateBaseUrls(key, dto.BaseUrls);
@@ -185,14 +185,14 @@ internal static partial class IndexerCatalogManifest
             return Invalid($"'{key}': it requires FlareSolverr, so 'defaultSettings.useFlareSolverr' must be true.");
         }
 
-        var definition = ValidateDefinition(key, dto.Definition);
+        var definition = ValidateDefinition(key, dto.Definition, releaseProtocol);
         if (definition.IsFailure)
         {
             return Result<CatalogManifestEntry>.Failure(definition.Error);
         }
 
         return Result<CatalogManifestEntry>.Success(new CatalogManifestEntry(
-            key, dto.Version.Value, name, description, ReleaseProtocol.Torrent, baseUrls.Value,
+            key, dto.Version.Value, name, description, releaseProtocol, baseUrls.Value,
             requiresFlareSolverr, priority, settings.Value, definition.Value));
     }
 
@@ -249,7 +249,7 @@ internal static partial class IndexerCatalogManifest
             dto.UseFlareSolverr ?? false));
     }
 
-    private static Result<string> ValidateDefinition(string key, JsonElement? element)
+    private static Result<string> ValidateDefinition(string key, JsonElement? element, ReleaseProtocol releaseProtocol)
     {
         if (element is not { ValueKind: JsonValueKind.Object } definition)
         {
@@ -271,7 +271,7 @@ internal static partial class IndexerCatalogManifest
             return Result<string>.Failure(Problem($"'{key}': a catalog entry must not declare a 'session' login block."));
         }
 
-        if (parsed.Value.ResultKind != ReleaseProtocol.Torrent)
+        if (parsed.Value.ResultKind != releaseProtocol)
         {
             return Result<string>.Failure(Problem($"'{key}': the definition's resultKind must match 'releaseProtocol'."));
         }

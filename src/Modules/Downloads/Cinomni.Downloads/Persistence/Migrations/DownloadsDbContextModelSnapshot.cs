@@ -157,6 +157,14 @@ namespace Cinomni.Downloads.Persistence.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("progress");
 
+                    b.Property<string>("Protocol")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Torrent")
+                        .HasColumnName("protocol");
+
                     b.Property<string>("ReleaseGuid")
                         .IsRequired()
                         .HasMaxLength(2048)
