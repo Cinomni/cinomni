@@ -464,6 +464,10 @@ public sealed class DownloadTask
     /// Holds an in-flight task because torrent egress could not be verified. Returns false when the
     /// task is already held or is not in flight, which is what makes a redelivered transition a no-op.
     /// <para>
+    /// A Usenet task is never held. It leaves over the machine's own connection, so the state of the
+    /// torrent tunnel says nothing about it, and a hold would stop a download the guard has no claim on.
+    /// </para>
+    /// <para>
     /// A hold is never a failure. Emitting <c>DownloadFailed</c> here would send the acquisition goal
     /// back to searching for the duration of the outage — burning indexer quota to find releases it
     /// then could not fetch either — and would lose the transfer's progress with it.
@@ -471,7 +475,7 @@ public sealed class DownloadTask
     /// </summary>
     public bool HoldForNetwork(string reason, DateTimeOffset now)
     {
-        if (NetworkHoldSince is not null || !IsInFlight)
+        if (NetworkHoldSince is not null || !IsInFlight || DownloadProtocols.IsUsenet(Protocol))
         {
             return false;
         }

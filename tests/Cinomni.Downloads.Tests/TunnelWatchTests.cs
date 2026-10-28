@@ -5,6 +5,7 @@ using Cinomni.Downloads.Contracts;
 using Cinomni.Downloads.Engine;
 using Cinomni.Downloads.Messaging;
 using Cinomni.Downloads.Persistence;
+using Cinomni.Downloads.Usenet;
 using Cinomni.Kernel.Identifiers;
 using Cinomni.Kernel.Messaging;
 using Cinomni.Operations.Messaging;
@@ -104,6 +105,39 @@ public sealed class TunnelWatchTests : IAsyncLifetime
         await CheckAsync();
 
         Assert.Contains(infoHash, _engine.Paused);
+    }
+
+    [Fact]
+    public async Task A_usenet_download_is_not_held_when_the_tunnel_is_lost()
+    {
+        // Usenet leaves over the machine's own connection, so the state of the torrent tunnel says
+        // nothing about it. A hold would pause a task whose downloader only advances queued and
+        // downloading rows, and the operator would be told one download was stopped that was not.
+        var torrentAttempt = await ArrangeDownloadingTaskAsync();
+        var usenetAttempt = Uuid7.New();
+        await using (var scope = _provider.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<DownloadService>().AddDownloadAsync(
+                attemptId: usenetAttempt,
+                intentId: Uuid7.New(),
+                workId: Uuid7.New(),
+                targetId: Uuid7.New(),
+                releaseGuid: "n1",
+                downloadUrl: "https://indexer.example/nzb/n1",
+                protocol: DownloadProtocols.Usenet);
+        }
+
+        _engine.ObserveUnverified(LeakReason);
+        await CheckAsync();
+        await CheckAsync();
+        await DrainAsync();
+
+        var usenet = await GetTaskAsync(usenetAttempt);
+        Assert.Equal(DownloadState.Queued, usenet!.State);
+        Assert.False(usenet.IsNetworkHeld);
+        Assert.DoesNotContain(usenet.History, entry => entry.Trigger == "NetworkHold");
+        Assert.True((await GetTaskAsync(torrentAttempt))!.IsNetworkHeld);
+        Assert.Equal(1, Assert.Single(_sink.Lost).HeldTaskCount);
     }
 
     [Fact]
