@@ -121,12 +121,24 @@ export function CollectionPlacementSection({ collections }: { collections: reado
                     </div>
                   </div>
                   <div className="flex shrink-0 gap-2">
-                    <Button type="button" size="sm" variant="subtle" onClick={() => setMoving(work)}>
-                      Move<span className="sr-only"> {titleOf(work)}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="subtle"
+                      aria-label={`Move ${titleOf(work)}`}
+                      onClick={() => setMoving(work)}
+                    >
+                      Move
                     </Button>
                     {work.collectionPinned && (
-                      <Button type="button" size="sm" variant="ghost" onClick={() => setReleasing(work)}>
-                        Release pin<span className="sr-only"> on {titleOf(work)}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Release pin on ${titleOf(work)}`}
+                        onClick={() => setReleasing(work)}
+                      >
+                        Release pin
                       </Button>
                     )}
                   </div>
