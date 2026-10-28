@@ -10,6 +10,25 @@ under the rules in *Versioning* below.
 
 ## Unreleased
 
+Nothing yet.
+
+## [0.1.0-alpha.4] - 2026-10-28
+
+**A tunnel that is actually up, a title you can place, and profile 5 no longer painted the wrong colour.**
+A healthy WireGuard tunnel is accepted. A film is downloaded only when the release is that film. You
+can move a title onto a shelf from the console, and release the pin. Dolby Vision profile 5 is no
+longer given the HDR10 curve. Still an alpha: read *Versioning* for what that promises.
+
+**Known gaps in this alpha:**
+
+- A 4K HDR source that has to be converted on the CPU still does not play at the default limits. It
+  stops after a minute and says which setting to change.
+- The VPN drop drill has not been run. One Intel Arc A380 passed the startup hardware test (VAAPI
+  H.264 encode, HEVC encode, and decode). That is not a substitute for the drill in DEPLOYMENT.md on
+  your own installation.
+- Dolby Vision profile 5 is not given the HDR10 curve, and this image still cannot interpret that
+  colour. A conversion does not claim the colours are fixed.
+
 ### Added
 
 - **A WireGuard peer you bring yourself.** `VPN_SERVICE_PROVIDER=custom` now forwards
@@ -30,8 +49,7 @@ under the rules in *Versioning* below.
   sidecar reported `default-route-not-via-tunnel` and, under `block`, refused to start. The check
   is now the kernel's own lookup, the one `ip route get` performs. A missing device, a lookup that
   cannot be taken, a reply for a different address, and a household source address are still not
-  healthy. An upgrade needs a rebuilt sidecar image; the published `0.1.0-alpha.3` image still has
-  the old check.
+  healthy.
 - **Dolby Vision profile 5 is no longer tone-mapped with the HDR10 curve.** That curve treats the
   picture as PQ in a standard colour space, which is what painted a profile 5 file green or purple:
   profile 5 has no HDR10 base layer, and this image's FFmpeg cannot interpret its colour. A conversion
@@ -47,6 +65,15 @@ under the rules in *Versioning* below.
   rejection shows what was compared. A film whose releases use another name, such as its
   original-language title, or another year, is now rejected; **Download anyway** still takes it by
   hand. Files already in the library are not checked again.
+
+### Upgrade notes
+
+Take a backup first, as for any upgrade. Nothing else needs doing by hand: the migrations run on start.
+
+- `docker compose pull && docker compose up -d` is what picks up the new sidecar. The published
+  `0.1.0-alpha.3` sidecar still refuses a policy-routed WireGuard tunnel.
+- If `.env` sets `CINOMNI_IMAGE_TAG`, change it to `0.1.0-alpha.4` before that pull. Unset, Compose
+  uses the default in `docker-compose.yml`, which this release moves.
 
 ## [0.1.0-alpha.3] - 2026-10-21
 
@@ -573,7 +600,7 @@ Versions sort as [SemVer](https://semver.org/#spec-item-11) says:
 
 | Stage | Example | New capabilities | Upgrading to the next version | Who it is for |
 |---|---|---|---|---|
-| **alpha** | `0.1.0-alpha.3` | Still landing, including large ones | Should work unattended; when it does not, the changelog says exactly what to do | People who run it knowingly and report problems |
+| **alpha** | `0.1.0-alpha.4` | Still landing, including large ones | Should work unattended; when it does not, the changelog says exactly what to do | People who run it knowingly and report problems |
 | **beta** | `0.1.0-beta.1` | Frozen for this version: fixes only | Unattended, from the previous beta or the last alpha | Anyone willing to report problems |
 | **rc** | `0.1.0-rc.1` | Frozen: only fixes for blockers | Unattended | Anyone; it becomes the release unless something blocks it |
 | **release** | `0.1.0` | — | Unattended; the rules below apply | Everyone |

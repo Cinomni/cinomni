@@ -26,7 +26,7 @@ flowchart LR
 ```
 
 **The MVP is done.** Milestones M0–M4 are complete and confirmed on linux/amd64, and a good deal of
-post-MVP depth has landed on top. The current version is **0.1.0-alpha.3**, the third
+post-MVP depth has landed on top. The current version is **0.1.0-alpha.4**, the fourth
 public alpha. See the *Release plan* below for what comes before a stable 1.0.0.
 
 | Milestone | What it delivered | Status |
@@ -48,7 +48,8 @@ criteria are met.
 |---|---|---|---|
 | **0.1.0-alpha.1** | Alpha | Everything built so far: both slices, the MVP hardening and the post-MVP depth | Released |
 | **0.1.0-alpha.2** | Alpha | Rule-based collections, pulled forward from *Next* into 0.1.0 | Released |
-| **0.1.0-alpha.3** | Alpha | Password change, subtitles from OpenSubtitles synced to the audio, a clear stop for a conversion the server cannot keep up with | Current |
+| **0.1.0-alpha.3** | Alpha | Password change, subtitles from OpenSubtitles synced to the audio, a clear stop for a conversion the server cannot keep up with | Released |
+| **0.1.0-alpha.4** | Alpha | A policy-routed WireGuard tunnel is accepted, a title can be placed from the console, and Dolby Vision profile 5 is not given the HDR10 curve | Current |
 | **0.1.0-alpha.N** | Alpha | Fixes and the gaps below; capabilities may still land | Planned |
 | **0.1.0-beta.1** | Beta | Capabilities frozen for 0.1.0; fixes only from here | When the beta criteria are met |
 | **0.1.0-rc.1** | Release candidate | No known blocker | When the beta has run clean |

@@ -2,7 +2,7 @@
   "name": "cinomni-web",
   "private": true,
   "license": "AGPL-3.0-or-later",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "type": "module",
   "description": "Cinomni web client — React + TypeScript SPA over the Cinomni API.",
   "scripts": {
