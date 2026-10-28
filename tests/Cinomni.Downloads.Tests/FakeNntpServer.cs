@@ -28,6 +28,12 @@ public enum ConnectionBehavior
 
     /// <summary>Serves one article and then closes the socket.</summary>
     ServeOneThenDrop,
+
+    /// <summary>Answers <c>ARTICLE</c> with <c>220</c> and then sends lines as fast as it can, with no end to the article.</summary>
+    FloodArticle,
+
+    /// <summary>Sends text with no line end as a greeting, as fast as it can.</summary>
+    EndlessGreeting,
 }
 
 /// <summary>
@@ -107,6 +113,9 @@ internal sealed class FakeNntpServer : IAsyncDisposable
                     case ConnectionBehavior.Unavailable:
                         await writer.WriteLineAsync("400 service temporarily unavailable");
                         return;
+                    case ConnectionBehavior.EndlessGreeting:
+                        await FloodAsync(writer, new string('x', 8192));
+                        return;
                 }
 
                 await writer.WriteLineAsync("200 ready");
@@ -117,6 +126,21 @@ internal sealed class FakeNntpServer : IAsyncDisposable
                 // The client went away, or the test is over.
             }
         }
+    }
+
+    /// <summary>
+    /// Sends <paramref name="unit"/> over and over, then goes quiet. The total is far past anything a client
+    /// should read but finite, so a client that does not stop is slow to fail rather than out of memory.
+    /// </summary>
+    private async Task FloodAsync(StreamWriter writer, string unit)
+    {
+        const int total = 64 * 1024 * 1024;
+        for (var sent = 0; sent < total; sent += unit.Length)
+        {
+            await writer.WriteAsync(unit.AsMemory(), stop.Token);
+        }
+
+        await Task.Delay(Timeout.Infinite, stop.Token);
     }
 
     private async Task AnswerAsync(StreamReader reader, StreamWriter writer, ConnectionBehavior behavior)
@@ -141,6 +165,13 @@ internal sealed class FakeNntpServer : IAsyncDisposable
                     await writer.WriteLineAsync("x");
                     await Task.Delay(50, stop.Token);
                 }
+            }
+
+            if (behavior == ConnectionBehavior.FloodArticle)
+            {
+                await writer.WriteLineAsync("220 article");
+                await FloodAsync(writer, new string('x', 8190) + "\r\n");
+                return;
             }
 
             var id = command.StartsWith("ARTICLE <", StringComparison.Ordinal) ? command["ARTICLE <".Length..^1] : null;
