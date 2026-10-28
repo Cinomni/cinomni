@@ -150,6 +150,7 @@ public static class CatalogEndpoints
             string? availability,
             string? genre,
             string? sort,
+            string? pinned,
             int? offset,
             int? limit,
             ClaimsPrincipal principal,
@@ -163,19 +164,20 @@ public static class CatalogEndpoints
 
             if (!TryParseName<WorkKind>(kind, out var workKind)
                 || !TryParseName<WorkAvailability>(availability, out var workAvailability)
-                || !TryParseName<WorkSort>(sort, out var workSort))
+                || !TryParseName<WorkSort>(sort, out var workSort)
+                || !TryParseOptionalBool(pinned, out var pinnedOnly))
             {
                 return Results.Json(
                     new
                     {
                         error = "catalog.invalid_filter",
-                        message = "kind, availability and sort take one of their named values.",
+                        message = "kind, availability and sort take one of their named values; pinned is true or false.",
                     },
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
             var query = new WorkListQuery(
-                Shelf(collection), workKind, q, workAvailability, genre, workSort ?? WorkSort.Title);
+                Shelf(collection), workKind, q, workAvailability, genre, workSort ?? WorkSort.Title, pinnedOnly);
             var page = await browse.PageAsync(
                 viewer, query, offset ?? 0, limit ?? CatalogPaging.DefaultPageSize, cancellationToken);
             return Results.Ok(new
@@ -481,6 +483,28 @@ public static class CatalogEndpoints
         return true;
     }
 
+    /// <summary>
+    /// Reads an optional boolean query value. Absent is fine (null). Anything other than <c>true</c> or
+    /// <c>false</c>, ignoring case, is refused — a missing filter and a filter the server does not
+    /// understand must not look the same, or a typo would silently list the whole library.
+    /// </summary>
+    private static bool TryParseOptionalBool(string? raw, out bool? value)
+    {
+        value = null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        if (!bool.TryParse(raw.Trim(), out var parsed))
+        {
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
     private static IResult Created(AddWorkResult result) =>
         result.IsSuccess
             ? Results.Created($"/api/catalog/works/{result.Value}", new { workId = result.Value.ToString() })
@@ -513,6 +537,9 @@ public static class CatalogEndpoints
         episodeCount = work.EpisodeCount,
         availableEpisodeCount = work.AvailableEpisodeCount,
         collectionId = work.Collection?.ToString(),
+        // Whether an administrator placed it by hand. Not hidden from a member who can already see the
+        // title: the pin changes nothing they are not allowed to know, and the console reads this field.
+        collectionPinned = work.CollectionPinned,
         externalIds = work.ExternalIds.Select(e => new { provider = e.Provider.ToString(), value = e.Value }),
         overview = withOverview ? work.Overview : null,
         runtimeMinutes = work.RuntimeMinutes,

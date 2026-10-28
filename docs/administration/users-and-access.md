@@ -87,10 +87,12 @@ To remove a collection's rule, remove all its conditions, then preview and save.
 Moving a title to a collection by hand **pins** it there: rules no longer move it until the pin is
 released. Releasing the pin places the title wherever the rules say at that moment.
 
-> The web interface does not move a single title or release a pin yet. Until it does, an
-> administrator can do both through the API: `PUT /api/catalog/works/{workId}/collection` with
-> `{"collectionId": "<id>"}` moves and pins, and `DELETE /api/catalog/works/{workId}/collection-pin`
-> releases the pin.
+Both are under **Place a title** on **Console → Collections**. Search for the title, or tick
+**Pinned only** to see the ones already placed by hand. **Move** asks which shelf and warns when the
+move would let more people see the title, or hide it from people who can see it now. **Release pin**
+hands the title back to the rules. The same two actions are
+`PUT /api/catalog/works/{workId}/collection` with `{"collectionId": "<id>"}` and
+`DELETE /api/catalog/works/{workId}/collection-pin`.
 
 When you upgrade to a version with rules, titles already outside **Library** are pinned, so saving
 the first rule cannot move them.
@@ -103,7 +105,8 @@ members until its metadata arrives**, and then placed by the rules. This keeps a
 restrict from being visible on the open **Library** in the meantime.
 
 Administrators see these titles, with a note on the title's page. If the metadata does not arrive,
-use **Refresh metadata** from the title's menu, or move the title by hand, which also releases it.
+use **Refresh metadata** from the title's menu, or move the title by hand from **Console →
+Collections**, which also releases it.
 A title added without a provider id is never held, because no metadata would ever arrive for it.
 
 ## Content ceiling (parental control)

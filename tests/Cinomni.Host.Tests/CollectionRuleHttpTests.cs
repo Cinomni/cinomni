@@ -124,14 +124,25 @@ public sealed class CollectionRuleHttpTests
         }
 
         // A move by hand pins; releasing the pin hands the title straight back to the rules.
+        // collectionPinned is what the console reads to offer "Release pin", so it has to survive the
+        // projection — a summary built by hand would already have set the field.
         var library = await DefaultCollectionIdAsync(client);
         var moved = await client.PutAsJsonAsync($"/api/catalog/works/{alien}/collection", new { collectionId = library });
         Assert.Equal(HttpStatusCode.NoContent, moved.StatusCode);
         Assert.Equal(library, await CollectionOfAsync(client, alien));
+        Assert.True(await PinnedAsync(client, alien));
+
+        using (var page = JsonDocument.Parse(await client.GetStringAsync("/api/catalog/works/page?pinned=true")))
+        {
+            var items = page.RootElement.GetProperty("items").EnumerateArray().ToList();
+            Assert.Contains(items, item => item.GetProperty("id").GetString() == alien.ToString());
+            Assert.All(items, item => Assert.True(item.GetProperty("collectionPinned").GetBoolean()));
+        }
 
         var unpinned = await client.DeleteAsync($"/api/catalog/works/{alien}/collection-pin");
         Assert.Equal(HttpStatusCode.NoContent, unpinned.StatusCode);
         Assert.Equal(shelf, await CollectionOfAsync(client, alien));
+        Assert.False(await PinnedAsync(client, alien));
     }
 
     [Fact]
@@ -155,6 +166,9 @@ public sealed class CollectionRuleHttpTests
 
         var noWork = await client.DeleteAsync($"/api/catalog/works/{Guid.NewGuid()}/collection-pin");
         await AssertErrorAsync(noWork, HttpStatusCode.NotFound, "catalog.work_not_found");
+
+        var badPinned = await client.GetAsync("/api/catalog/works/page?pinned=yes");
+        await AssertErrorAsync(badPinned, HttpStatusCode.BadRequest, "catalog.invalid_filter");
     }
 
     private static async Task AssertErrorAsync(HttpResponseMessage response, HttpStatusCode status, string code)
@@ -177,6 +191,12 @@ public sealed class CollectionRuleHttpTests
     {
         using var body = JsonDocument.Parse(await client.GetStringAsync($"/api/catalog/works/{work}"));
         return body.RootElement.GetProperty("collectionId").GetString();
+    }
+
+    private static async Task<bool> PinnedAsync(HttpClient client, WorkId work)
+    {
+        using var body = JsonDocument.Parse(await client.GetStringAsync($"/api/catalog/works/{work}"));
+        return body.RootElement.GetProperty("collectionPinned").GetBoolean();
     }
 
     /// <summary>Identity and Catalog over real HTTP, with enums on the wire by name as the Host sends them.</summary>

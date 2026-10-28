@@ -39,8 +39,8 @@ described by a definition.
 
 **Monitoring.** Whether Cinomni searches for a title (or episode) on its own.
 
-**Pinned.** A title moved to a collection by hand. Rules leave it where it is until the pin is
-released.
+**Pinned.** A title moved to a collection by hand (**Console → Collections → Place a title**). Rules
+leave it where it is until the pin is released.
 
 **Recycle folder.** `library/.recycle`, where replaced files go. Never emptied automatically.
 

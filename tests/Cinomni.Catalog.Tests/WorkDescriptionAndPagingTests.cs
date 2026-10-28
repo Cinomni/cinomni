@@ -146,6 +146,26 @@ public sealed class WorkDescriptionAndPagingTests : IAsyncLifetime
         Assert.Empty(await TitlesAsync(new WorkListQuery(Genre: "science fiction"))); // a label, matched exactly
     }
 
+    [Fact]
+    public async Task A_page_can_narrow_to_titles_placed_by_hand()
+    {
+        var loose = await AddMovieAsync("Alien", "348");
+        var held = await AddMovieAsync("Aliens", "679");
+
+        await using (var scope = _provider.CreateAsyncScope())
+        {
+            var admin = scope.ServiceProvider.GetRequiredService<ICollectionAdministration>();
+            var library = (await admin.ListAsync()).Single(collection => collection.IsDefault);
+            var moved = await admin.MoveWorkAsync(new WorkId(held), library.Id);
+            Assert.True(moved.IsSuccess, moved.IsFailure ? moved.Error.Message : null);
+        }
+
+        Assert.Equal(["Aliens"], await TitlesAsync(new WorkListQuery(Pinned: true)));
+        Assert.Equal(["Alien"], await TitlesAsync(new WorkListQuery(Pinned: false)));
+        Assert.True((await GetAsync(Member, held))!.CollectionPinned);
+        Assert.False((await GetAsync(Member, loose))!.CollectionPinned);
+    }
+
     [Theory]
     [InlineData("%", true)]
     [InlineData("_", false)]

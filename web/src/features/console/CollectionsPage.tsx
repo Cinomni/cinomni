@@ -15,6 +15,7 @@ import { PlusIcon } from '@/ui/icons'
 import { Spinner } from '@/ui/Spinner'
 import { TextField } from '@/ui/TextField'
 import { CollectionOrderSection } from './CollectionOrderSection'
+import { CollectionPlacementSection } from './CollectionPlacementSection'
 import { CollectionRulesSection } from './CollectionRulesSection'
 
 /**
@@ -60,6 +61,7 @@ export function CollectionsPage() {
               <CollectionRow key={collection.id} collection={collection} collections={data} />
             ))}
           </ul>
+          <CollectionPlacementSection collections={data} />
         </>
       )}
 

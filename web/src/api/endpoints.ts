@@ -193,6 +193,7 @@ export const catalogApi = {
     if (query.availability) params.set('availability', query.availability)
     if (query.genre) params.set('genre', query.genre)
     if (query.sort) params.set('sort', query.sort)
+    if (query.pinned != null) params.set('pinned', String(query.pinned))
     return api.get<WorkPage>(`/api/catalog/works/page?${params.toString()}`, signal)
   },
   facets: (collectionId?: string, kind?: WorkKind, signal?: AbortSignal) => {
@@ -274,6 +275,8 @@ export const catalogApi = {
   /** Moves one title by hand, which also pins it out of the rules' reach. */
   moveWork: (workId: string, collectionId: string) =>
     api.put<void>(`/api/catalog/works/${workId}/collection`, { collectionId }),
+  /** Releases a manual pin and places the title where the rules say now. */
+  unpinWork: (workId: string) => api.del<void>(`/api/catalog/works/${workId}/collection-pin`),
 }
 
 // --- Metadata -----------------------------------------------------------------------------------
