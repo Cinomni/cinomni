@@ -12,7 +12,7 @@ namespace Cinomni.Downloads.Engine;
 /// </summary>
 /// <param name="TunnelDevice">The interface the sidecar was told to bind to. Empty when none is configured.</param>
 /// <param name="TunnelUp">The device exists and carries an address.</param>
-/// <param name="DefaultRouteViaTunnel">The default route leaves through that device.</param>
+/// <param name="DefaultRouteViaTunnel">The route the kernel would use for an ordinary packet leaves through that device.</param>
 /// <param name="EgressIdentityMatches">
 /// The source address the kernel would put on the next outbound packet is the tunnel's own. This is
 /// the leak check, and it is the one that cannot be inferred from configuration.

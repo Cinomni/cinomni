@@ -7,6 +7,7 @@ that stops every download in the installation has to be testable without the thi
 
 import os
 import socket
+import struct
 import sys
 import unittest
 
@@ -67,6 +68,100 @@ class DefaultRouteTests(unittest.TestCase):
         self.assertIsNone(netguard.parse_default_route("tun0\t00000000\tbroken\n"))
 
 
+def _route_reply(attributes, nlmsg_type=netguard._RTM_NEWROUTE, table=0):
+    """An RTM_GETROUTE answer whose attributes are already packed, including their padding.
+
+    `table` is the single byte in the route header. A policy-routed reply still puts the main
+    table's id there; the interface the packet leaves through is an attribute, not that byte.
+    """
+    route = struct.pack("BBBBBBBBI", socket.AF_INET, 32, 0, 0, table, 0, 0, 0, 0)
+    payload = route + attributes
+    return struct.pack("IHHII", 16 + len(payload), nlmsg_type, 0, 1, 0) + payload
+
+
+def _attribute(rta_type, payload):
+    header = struct.pack("HH", 4 + len(payload), rta_type)
+    padded = header + payload
+    return padded + b"\x00" * ((4 - len(padded) % 4) % 4)
+
+
+class RouteLookupTests(unittest.TestCase):
+    def test_a_policy_routed_reply_names_the_output_interface_not_the_main_table(self):
+        # 254 is the main table's id, and a WireGuard reply still carries it: in the header byte and
+        # in RTA_TABLE. The packet leaves through interface 4. Reading the table, or inventing an
+        # interface from the source address beside it, is the bug.
+        reply = _route_reply(
+            _attribute(15, struct.pack("I", 254))
+            + _attribute(netguard._RTA_OIF, struct.pack("I", 4))
+            + _attribute(7, socket.inet_aton("192.0.2.7")),
+            table=254,
+        )
+
+        self.assertEqual(4, netguard.parse_route_lookup(reply))
+
+    def test_an_output_interface_after_a_padded_attribute_is_still_read(self):
+        # An attribute whose payload is not a multiple of four is followed by padding. Reading the
+        # next header from the unaligned end would invent an interface out of that padding.
+        reply = _route_reply(
+            _attribute(5, b"\x01\x02") + _attribute(netguard._RTA_OIF, struct.pack("I", 9))
+        )
+
+        self.assertEqual(9, netguard.parse_route_lookup(reply))
+
+    def test_a_preferred_source_is_not_an_interface(self):
+        # The leak the two facts are kept apart to catch. A reply can name a source and still not
+        # name the device the packet leaves through. Inventing the device from the source would
+        # make that look routed.
+        reply = _route_reply(_attribute(7, socket.inet_aton("192.168.1.20")))
+
+        self.assertIsNone(netguard.parse_route_lookup(reply))
+
+    def test_a_zero_index_is_not_an_interface(self):
+        reply = _route_reply(_attribute(netguard._RTA_OIF, struct.pack("I", 0)))
+
+        self.assertIsNone(netguard.parse_route_lookup(reply))
+
+    def test_an_error_a_truncation_or_nothing_is_not_a_route(self):
+        error = struct.pack("IHHII", 20, netguard._NLMSG_ERROR, 0, 1, 0) + struct.pack("i", -101)
+        short = struct.pack("IHHII", 16, netguard._RTM_NEWROUTE, 0, 1, 0)
+
+        self.assertIsNone(netguard.parse_route_lookup(error))
+        self.assertIsNone(netguard.parse_route_lookup(short))
+        self.assertIsNone(netguard.parse_route_lookup(b""))
+        self.assertIsNone(netguard.parse_route_lookup(None))
+        self.assertIsNone(netguard.parse_route_lookup("not bytes"))
+        self.assertIsNone(netguard.parse_route_lookup(b"\x68\x00\x00\x00\x18\x00"))
+
+    def test_a_reply_for_another_destination_is_not_this_lookup(self):
+        # The interface is named, and the source beside it is a tunnel address. Neither makes this
+        # the answer to the question that was asked. Accepting it would verify a route for a packet
+        # this process did not look up.
+        reply = _route_reply(
+            _attribute(netguard._RTA_DST, socket.inet_aton("198.51.100.1"))
+            + _attribute(netguard._RTA_OIF, struct.pack("I", 4))
+            + _attribute(7, socket.inet_aton("192.0.2.7"))
+        )
+
+        self.assertEqual(4, netguard.parse_route_lookup(reply))
+        self.assertIsNone(netguard.parse_route_lookup(reply, netguard.PROBE_DESTINATION))
+
+    def test_a_reply_that_names_no_destination_is_not_accepted_as_the_lookup(self):
+        reply = _route_reply(_attribute(netguard._RTA_OIF, struct.pack("I", 4)))
+
+        self.assertIsNone(netguard.parse_route_lookup(reply, netguard.PROBE_DESTINATION))
+
+    def test_the_asked_destination_is_accepted_even_when_the_table_byte_says_main(self):
+        reply = _route_reply(
+            _attribute(netguard._RTA_DST, socket.inet_aton(netguard.PROBE_DESTINATION))
+            + _attribute(15, struct.pack("I", 254))
+            + _attribute(netguard._RTA_OIF, struct.pack("I", 4))
+            + _attribute(7, socket.inet_aton("192.168.1.20")),
+            table=254,
+        )
+
+        self.assertEqual(4, netguard.parse_route_lookup(reply, netguard.PROBE_DESTINATION))
+
+
 class ClassifyTests(unittest.TestCase):
     def test_all_three_facts_holding_is_the_only_healthy_verdict(self):
         verdict = netguard.classify("tun0", True, "10.2.0.7", "tun0", "10.2.0.7", NOW)
@@ -107,10 +202,10 @@ class ClassifyTests(unittest.TestCase):
         self.assertFalse(verdict.default_route_via_tunnel)
         self.assertEqual(netguard.REASON_ROUTE_ELSEWHERE, verdict.reason)
 
-    def test_the_leak_case_the_first_two_facts_miss(self):
-        # The device is up and holds the default route, and yet the kernel would put the household's
-        # address on the next packet — a policy route or a second table. This is the whole reason
-        # the source address is observed rather than inferred from the routing table.
+    def test_the_leak_case_the_route_check_misses(self):
+        # The device is up and the kernel's lookup names it, and yet the next packet would carry the
+        # household's address. A route that names the tunnel is not an identity. Inferring one from
+        # the other would call this healthy.
         verdict = netguard.classify("tun0", True, "10.2.0.7", "tun0", "192.168.1.20", NOW)
 
         self.assertFalse(verdict.healthy)
@@ -118,6 +213,21 @@ class ClassifyTests(unittest.TestCase):
         self.assertTrue(verdict.default_route_via_tunnel)
         self.assertFalse(verdict.egress_identity_matches)
         self.assertEqual(netguard.REASON_IDENTITY_MISMATCH, verdict.reason)
+
+    def test_a_missing_device_is_not_healthy_when_the_lookup_names_it(self):
+        verdict = netguard.classify("tun0", False, None, "tun0", "10.2.0.7", NOW)
+
+        self.assertFalse(verdict.healthy)
+        self.assertEqual(netguard.REASON_NO_DEVICE, verdict.reason)
+
+    def test_a_lookup_that_cannot_be_taken_is_not_a_route_through_the_tunnel(self):
+        # None is what the probe returns when netlink cannot be asked. The source happening to be
+        # the tunnel's address does not fill that in: a fact that was not observed is not verified.
+        verdict = netguard.classify("tun0", True, "10.2.0.7", None, "10.2.0.7", NOW)
+
+        self.assertFalse(verdict.healthy)
+        self.assertFalse(verdict.default_route_via_tunnel)
+        self.assertEqual(netguard.REASON_ROUTE_ELSEWHERE, verdict.reason)
 
     def test_no_route_at_all_is_reported_as_such_and_is_not_healthy(self):
         # What a sealed box looks like from inside: nothing can leave, including this probe.
@@ -182,6 +292,76 @@ class Ipv6Tests(unittest.TestCase):
         self.assertEqual(netguard.REASON_ROUTE_ELSEWHERE, verdict.reason)
 
 
+class ObserveWiringTests(unittest.TestCase):
+    """Which fact `observe` asks for. The main table is the one it must not decide from."""
+
+    def setUp(self):
+        self._originals = {
+            name: getattr(netguard, name)
+            for name in (
+                "route_lookup_device",
+                "read_route_table",
+                "device_present",
+                "device_address",
+                "observed_source_address",
+                "observed_source_address_v6",
+                "read_inet6_table",
+            )
+        }
+        netguard.device_present = lambda device: device == "tun0"
+        netguard.device_address = lambda device: "10.2.0.7" if device == "tun0" else None
+        netguard.observed_source_address_v6 = lambda *args, **kwargs: None
+        netguard.read_inet6_table = lambda path=netguard.INET6_TABLE: ""
+
+        def refuse_main_table(path="/proc/net/route"):
+            raise AssertionError("the main routing table is not the egress route")
+
+        netguard.read_route_table = refuse_main_table
+
+    def tearDown(self):
+        for name, value in self._originals.items():
+            setattr(netguard, name, value)
+
+    def test_a_policy_routed_tunnel_is_healthy_when_the_lookup_and_the_source_agree(self):
+        netguard.route_lookup_device = lambda destination=netguard.PROBE_DESTINATION: "tun0"
+        netguard.observed_source_address = lambda *args, **kwargs: "10.2.0.7"
+
+        verdict = netguard.observe("tun0", NOW)
+
+        self.assertTrue(verdict.healthy)
+        self.assertEqual(netguard.REASON_OK, verdict.reason)
+        self.assertTrue(verdict.default_route_via_tunnel)
+
+    def test_a_household_source_is_not_healthy_when_the_lookup_names_the_tunnel(self):
+        netguard.route_lookup_device = lambda destination=netguard.PROBE_DESTINATION: "tun0"
+        netguard.observed_source_address = lambda *args, **kwargs: "192.168.1.20"
+
+        verdict = netguard.observe("tun0", NOW)
+
+        self.assertFalse(verdict.healthy)
+        self.assertEqual(netguard.REASON_IDENTITY_MISMATCH, verdict.reason)
+
+    def test_a_missing_device_is_not_healthy_when_the_lookup_names_it(self):
+        netguard.device_present = lambda device: False
+        netguard.device_address = lambda device: None
+        netguard.route_lookup_device = lambda destination=netguard.PROBE_DESTINATION: "tun0"
+        netguard.observed_source_address = lambda *args, **kwargs: "10.2.0.7"
+
+        verdict = netguard.observe("tun0", NOW)
+
+        self.assertFalse(verdict.healthy)
+        self.assertEqual(netguard.REASON_NO_DEVICE, verdict.reason)
+
+    def test_a_lookup_that_leaves_by_the_underlay_is_not_the_tunnel(self):
+        netguard.route_lookup_device = lambda destination=netguard.PROBE_DESTINATION: "eth0"
+        netguard.observed_source_address = lambda *args, **kwargs: "10.2.0.7"
+
+        verdict = netguard.observe("tun0", NOW)
+
+        self.assertFalse(verdict.healthy)
+        self.assertEqual(netguard.REASON_ROUTE_ELSEWHERE, verdict.reason)
+
+
 class ObservationFailureTests(unittest.TestCase):
     """A probe that could not be taken. It is the answer that must never look like health."""
 
@@ -220,6 +400,13 @@ class PolicyTests(unittest.TestCase):
 
 
 class ProbeTests(unittest.TestCase):
+    def test_the_route_lookup_answers_or_reports_that_it_could_not(self):
+        # On Linux this is an interface name. Off Linux, or with no route, it is None. Either is an
+        # answer; raising is not.
+        device = netguard.route_lookup_device()
+
+        self.assertTrue(device is None or bool(device))
+
     def test_the_source_probe_emits_nothing_and_still_answers(self):
         # A UDP connect performs the route lookup without a handshake. On any machine with a route
         # to the internet this returns an address; on one without, it returns None. Both are correct
@@ -273,6 +460,7 @@ class ProbeTests(unittest.TestCase):
             self.assertIsNone(netguard.device_address("tun0"))
             self.assertIsNone(netguard.observed_source_address())
             self.assertIsNone(netguard.observed_source_address_v6())
+            self.assertIsNone(netguard.route_lookup_device())
         finally:
             socket.socket = original
 

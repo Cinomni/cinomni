@@ -244,7 +244,8 @@ list.
 |---|---|---|
 | `VPN_SERVICE_PROVIDER` | **none** | Required by the overlay. Which provider the tunnel image connects to. |
 | `VPN_TYPE` | `wireguard` | `wireguard` or `openvpn`. |
-| `WIREGUARD_PRIVATE_KEY`, `WIREGUARD_ADDRESSES`, `WIREGUARD_PRESHARED_KEY` | empty | WireGuard credentials, passed to the tunnel image unread. Cinomni never parses or logs them. |
+| `WIREGUARD_PRIVATE_KEY`, `WIREGUARD_ADDRESSES`, `WIREGUARD_PRESHARED_KEY` | empty | WireGuard credentials, passed to the tunnel image unread. Cinomni never parses or logs them. | 
+| `WIREGUARD_PUBLIC_KEY`, `WIREGUARD_ENDPOINT_IP`, `WIREGUARD_ENDPOINT_PORT` | empty | A peer you bring yourself. Set `VPN_SERVICE_PROVIDER=custom` and fill these from the config's `[Peer]` block. The endpoint must be an IP. Leave them empty for a provider on gluetun's list. |
 | `OPENVPN_USER`, `OPENVPN_PASSWORD` | empty | The OpenVPN equivalent. |
 | `VPN_SERVER_COUNTRIES`, `VPN_SERVER_CITIES` | empty | Where the provider should put you. |
 | `CINOMNI_TUNNEL_LOSS_POLICY` | `block` | `block`, `pause-and-alert` or `ignore`. Read by both the sidecar and the application, which accept the same three words in any casing. A value that is not one of the three becomes `block`. |
@@ -838,12 +839,15 @@ Four layers, and each one is useless without the others:
    provide: a filter that is loaded and a filter that works are not the same claim.
 
 Three independent facts have to hold for the traffic to count as verified, and each fails on its own:
-the tunnel device exists and carries an address; the default route leaves through that device; and
-the source address the kernel would put on the next outbound packet is the tunnel's own. The third is
-the leak check, and it is the one the first two miss: a policy route or a second table can carry
-traffic off the box while the tunnel sits there looking healthy. It is taken silently: a `connect()`ed
-UDP socket performs the full route lookup without sending anything, so the probe cannot itself become
-the leak it is looking for.
+the tunnel device exists and carries an address; the route the kernel would use for an ordinary packet
+leaves through that device; and the source address the kernel would put on the next outbound packet is
+the tunnel's own. The route is the lookup `ip route get` performs, policy rules included. The default
+row of the main table is not that fact: a WireGuard tunnel leaves it on the underlay so its own
+handshake can still leave, and installs the route everything else uses in another table. Reading that
+row refuses a healthy tunnel, and it can miss a rule that sends traffic the other way. The third fact
+is the leak a route cannot answer: the kernel can name the tunnel device and still put another address
+on the packet. It is taken silently: a `connect()`ed UDP socket performs the full route lookup without
+sending anything, so the probe cannot itself become the leak it is looking for.
 
 The third fact is asked of **both address families**. A tunnel that carries IPv4 only leaves native
 IPv6 egress intact, and libtorrent will announce and connect over it with your own address. That is the
@@ -940,7 +944,8 @@ channel ever crosses a host boundary, the trade reverses and the decision has to
 The default is gluetun, unmodified and pinned by digest (section 12). Set `CINOMNI_VPN_IMAGE` to use
 another, if it satisfies the same contract:
 
-- it creates the interface named by `CINOMNI_TUNNEL_DEVICE` and holds the default route through it;
+- it creates the interface named by `CINOMNI_TUNNEL_DEVICE`, and an ordinary packet (`ip route get`,
+  not the main table's default) leaves through that device;
 - it filters everything else, and stays filtered when the tunnel is down;
 - it declares a `HEALTHCHECK`. Compose refuses the dependency outright if it does not, which is the
   right way to find out;
@@ -964,15 +969,21 @@ your data, before you trust it, and again after any change to the overlay or the
    with visible peers. Record what the swarm sees:
    ```bash
    docker compose exec vpn wget -qO- https://ipinfo.io/ip     # the tunnel's address, not yours
-   docker compose exec vpn ip route show default              # default via the tunnel device
+   docker compose exec vpn ip route get 203.0.113.1           # dev is the tunnel device
    ```
-   Expect the first to differ from your household's public address. If it does not, stop: nothing
-   below is meaningful and the tunnel is not carrying traffic in the first place.
+   Expect the first to differ from your household's public address, and `dev` in the second to be
+   the tunnel device. `ip route show default` is not this check: a WireGuard tunnel leaves that row
+   on the underlay so its handshake can still leave. If the public address is your own, stop:
+   nothing below is meaningful and the tunnel is not carrying traffic in the first place.
 2. **Drop it three different ways**, one at a time, restoring in between. They fail differently and a
    kill-switch that survives one can still miss another:
    ```bash
    docker compose exec vpn ip link set "${CINOMNI_TUNNEL_DEVICE:-tun0}" down   # the interface goes
-   docker compose exec vpn ip route del default                                # the route goes
+   # the route goes — the one `ip route get` named, not blindly the main table's default.
+   #   `203.0.113.1 dev tun0 table 51820` -> ip route del default dev tun0 table 51820
+   #   a main-table default through the tunnel -> ip route del default
+   # `ip route del default` alone does not drop a route that lives in another table. On a WireGuard
+   # tunnel it removes the underlay route the handshake uses instead.
    docker compose stop vpn                                                     # the whole container goes
    ```
 3. **Assert, for each of the three:**
@@ -1465,7 +1476,7 @@ value not listed here is a defect, not a state.
 | `tunnel-guard-disabled` | The sidecar has no `SIDECAR_TUNNEL_DEVICE`. Torrent traffic leaves over your own connection. Expected without the overlay; a misapplied overlay otherwise. |
 | `tunnel-device-missing` | The interface does not exist. The tunnel never came up; read the tunnel container's own log first. |
 | `tunnel-device-has-no-address` | The interface exists and carries no address. Usually transient: the tunnel process is up and the provider has not handed out an address yet. Persisting means the provider handshake is failing. |
-| `default-route-not-via-tunnel` | Up, but not routed. What a restarted tunnel looks like for the seconds before it reinstalls its routes; persisting means something else owns the default route. |
+| `default-route-not-via-tunnel` | Up, but the kernel would not send an ordinary packet through it (`ip route get`, policy rules included). A restarted tunnel looks like this before it reinstalls its routes. The main table's default is not this check. |
 | `egress-identity-not-the-tunnel` | Routed and still leaking: the kernel would put another address on the next packet. A policy route or a second interface. This is the leak the first two checks miss. |
 | `ipv6-egress-not-the-tunnel` | The IPv4 half is correct and IPv6 would leave with an address the tunnel does not hold. Either give the tunnel IPv6 or remove IPv6 egress from the container's namespace. |
 | `no-egress-route` | Nothing can leave at all, including the probe. What a correctly sealed container looks like while its tunnel is down. |

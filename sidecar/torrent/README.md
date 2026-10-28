@@ -70,8 +70,9 @@ Expected tail: `== PoC OK ==`.
 Both are opt-in and both are off in this file. `docker-compose.vpn.yml` turns them on and
 DEPLOYMENT.md section 7 explains the whole arrangement; what lives here is:
 
-- `netguard.py` — the three observations (device address, default route, and the source address the
-  kernel would pick) and the pure classification over them. `SIDECAR_TUNNEL_DEVICE` turns it on;
+- `netguard.py` — the three observations (device address, the route the kernel would use, and the
+  source address the kernel would pick) and the pure classification over them. `SIDECAR_TUNNEL_DEVICE`
+  turns it on;
   `SIDECAR_TUNNEL_POLICY` (`block` by default) decides what a failed observation does. Under `block`
   the process refuses to start without its tunnel; under `block` and `pause-and-alert` it pauses the
   whole session when it loses it, and under `pause-and-alert` `OverrideTunnelHold` lifts that for the

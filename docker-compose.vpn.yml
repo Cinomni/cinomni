@@ -85,6 +85,11 @@ services:
       WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY:-}
       WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES:-}
       WIREGUARD_PRESHARED_KEY: ${WIREGUARD_PRESHARED_KEY:-}
+      # A peer you bring yourself (VPN_SERVICE_PROVIDER=custom). Empty for a provider on gluetun's list,
+      # which looks the server up from the key. An endpoint must be an IP: gluetun does not resolve a name.
+      WIREGUARD_PUBLIC_KEY: ${WIREGUARD_PUBLIC_KEY:-}
+      WIREGUARD_ENDPOINT_IP: ${WIREGUARD_ENDPOINT_IP:-}
+      WIREGUARD_ENDPOINT_PORT: ${WIREGUARD_ENDPOINT_PORT:-}
       OPENVPN_USER: ${OPENVPN_USER:-}
       OPENVPN_PASSWORD: ${OPENVPN_PASSWORD:-}
       SERVER_COUNTRIES: ${VPN_SERVER_COUNTRIES:-}

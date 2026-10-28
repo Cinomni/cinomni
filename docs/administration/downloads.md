@@ -62,7 +62,8 @@ Only torrent traffic goes through the tunnel. Indexer searches, metadata and sub
 server's normal connection.
 
 Cinomni checks regularly that torrent traffic would really leave through the tunnel (the device
-exists, the default route uses it, and the source address, in IPv4 and IPv6, is the tunnel's). When
+exists, an ordinary packet would leave through it, and the source address, in IPv4 and IPv6, is the
+tunnel's). When
 that stops being true:
 
 - the engine stops its own traffic immediately;
