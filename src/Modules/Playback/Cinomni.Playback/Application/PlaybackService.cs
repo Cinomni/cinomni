@@ -454,11 +454,23 @@ public sealed class PlaybackService(
         IReadOnlyList<string> audioCodecs = selected?.Codec is { } codec ? [codec] : [];
 
         // Library knows the range of anything Import read since it started reading it; for the rest the
-        // file's own header is asked once, and the answer kept.
+        // file's own header is asked once, and the answer kept. A Dolby Vision file is asked for its
+        // profile even when the range is already known: Library does not store the profile, and profile 5
+        // must not be tone-mapped as if it had an HDR10 base layer.
         var range = video?.VideoRangeType;
-        if (video is not null && range is null)
+        int? dolbyVisionProfile = null;
+        if (video is not null && (range is null || range == VideoRangeType.DoVi))
         {
-            range = await videoRange.ProbeAsync(version.Id.Value, version.FullPath, cancellationToken);
+            if (range is null)
+            {
+                range = await videoRange.ProbeAsync(version.Id.Value, version.FullPath, cancellationToken);
+            }
+
+            if (range == VideoRangeType.DoVi)
+            {
+                dolbyVisionProfile = await videoRange.DolbyVisionProfileAsync(
+                    version.Id.Value, version.FullPath, cancellationToken);
+            }
         }
 
         return new PlaybackSource(
@@ -466,7 +478,8 @@ public sealed class PlaybackService(
             SelectedAudioIsDefault: audioIndex == PlaybackTracks.DefaultAudio(version),
             VideoRange: range,
             AudioChannels: selected?.Channels,
-            ImageSubtitleIndex: imageSubtitle);
+            ImageSubtitleIndex: imageSubtitle,
+            DolbyVisionProfile: dolbyVisionProfile);
     }
 
     /// <summary>Maps a file extension to the ffprobe-style container name the client capabilities use.</summary>

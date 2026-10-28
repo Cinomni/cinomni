@@ -26,7 +26,8 @@ public sealed record PlaybackSource(
     bool SelectedAudioIsDefault = true,
     VideoRangeType? VideoRange = null,
     int? AudioChannels = null,
-    int? ImageSubtitleIndex = null)
+    int? ImageSubtitleIndex = null,
+    int? DolbyVisionProfile = null)
 {
     public bool IsHdr => VideoRange is VideoRangeType.Hdr10 or VideoRangeType.Hdr10Plus or VideoRangeType.Hlg or VideoRangeType.DoVi;
 }

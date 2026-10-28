@@ -1,3 +1,4 @@
+using Cinomni.Library.Contracts;
 using Cinomni.Operations.Settings;
 using Cinomni.Playback.Contracts;
 using Cinomni.Playback.Encoding;
@@ -122,13 +123,20 @@ public sealed class PlaybackPlanner(
         var toneMap = false;
         if (source.IsHdr)
         {
-            toneMap = options.ToneMapping && capabilities.ToneMapping;
+            // Profile 5 has no HDR10 base layer. The curve below interprets PQ in a standard YCbCr space,
+            // which is what paints a profile 5 picture green or purple. This FFmpeg cannot read that
+            // colour, so the curve is not applied rather than applied and wrong. Profiles 7 and 8, and a
+            // Dolby Vision file whose profile was not read, still have (or are taken for) an HDR10 base.
+            var profile5 = source.VideoRange == VideoRangeType.DoVi && source.DolbyVisionProfile == 5;
+            toneMap = options.ToneMapping && capabilities.ToneMapping && !profile5;
             decisions.Add(new PlaybackDecision("dynamicRange", "SDR", source.VideoRange?.ToString() ?? "HDR", Verdict(toneMap)));
-            reasons.Add(!options.ToneMapping
-                ? "the source is HDR and tone mapping is off in settings; colours may look washed out"
-                : toneMap
-                    ? $"the source is {source.VideoRange} HDR; it is tone-mapped to SDR while it is converted"
-                    : "the source is HDR but this FFmpeg build has no tone-mapping filters; colours may look washed out");
+            reasons.Add(profile5
+                ? "the source is Dolby Vision profile 5, which has no HDR10 base layer; the HDR10 tone-mapping curve is not applied, because it would show the wrong colours. This FFmpeg cannot interpret that colour"
+                : !options.ToneMapping
+                    ? "the source is HDR and tone mapping is off in settings; colours may look washed out"
+                    : toneMap
+                        ? $"the source is {source.VideoRange} HDR; it is tone-mapped to SDR while it is converted"
+                        : "the source is HDR but this FFmpeg build has no tone-mapping filters; colours may look washed out");
         }
 
         var softwareCap = SoftwareCap(source, selection.Backend, options, decisions, reasons);

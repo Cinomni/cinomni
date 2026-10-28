@@ -1292,10 +1292,13 @@ A transcode moves each frame one of two ways, and the choice decides what it cos
 - **Tone mapping runs only in a transcode.** An HDR file a device plays directly, or after a remux,
   reaches it untouched: an HDR screen shows it as intended.
 - **Dolby Vision profile 5** carries no HDR10 base layer (its colour lives in Dolby's own format,
-  which the `zscale` path does not interpret), so a transcode of it can show wrong colours, typically
-  a green or purple cast. **Profiles 7 and 8** carry an HDR10 (or HLG) base layer and tone-map
-  correctly. The import records a Dolby Vision stream as `DoVi` without the profile, so which one a
-  file is has to be read with `ffprobe` or `mediainfo`.
+  which the `zscale` path does not interpret). A conversion no longer applies that curve to a file
+  whose profile was read as 5: that was the green or purple cast. This image's FFmpeg (`apt install
+  ffmpeg`) cannot interpret that colour, so the conversion does not claim to correct it, and the plan
+  says so. **Profiles 7 and 8** carry an HDR10 (or HLG) base layer and tone-map as before. A Dolby
+  Vision file whose profile could not be read is still tone-mapped as HDR10, which is right for 7 and
+  8 and wrong for an unread 5. The import records the stream as `DoVi` without the profile; playback
+  reads the profile from the file header when it plans a conversion.
 - **4K HDR on the CPU does not keep up at the defaults.** Measured on the packaged container with
   `CINOMNI_CPUS=4.0` and `CINOMNI_MEMORY=2g`, a 4K HEVC 10-bit Dolby Vision source decoded in
   software at about 0.73× real time on its own, and at about 0.65× with scaling, tone mapping and x264

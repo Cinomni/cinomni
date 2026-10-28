@@ -276,10 +276,27 @@ public sealed class FfmpegHardwareCapabilityProbeTests
     [Theory]
     [InlineData("""{"streams":[{"color_transfer":"smpte2084"}]}""", Cinomni.Library.Contracts.VideoRangeType.Hdr10)]
     [InlineData("""{"streams":[{"color_transfer":"bt709","side_data_list":[{"side_data_type":"DOVI configuration record"}]}]}""", Cinomni.Library.Contracts.VideoRangeType.DoVi)]
+    [InlineData("""{"streams":[{"color_transfer":"smpte2084","side_data_list":[{"side_data_type":"DOVI configuration record","dv_profile":5}]}]}""", Cinomni.Library.Contracts.VideoRangeType.DoVi)]
     [InlineData("""{"streams":[{"color_transfer":"bt709"}]}""", Cinomni.Library.Contracts.VideoRangeType.Sdr)]
     public void The_playback_range_probe_reads_what_import_would_have(string json, Cinomni.Library.Contracts.VideoRangeType expected)
     {
-        Assert.Equal(expected, FfprobeVideoRangeProbe.Parse(json));
+        var parsed = FfprobeVideoRangeProbe.Parse(json);
+        Assert.NotNull(parsed);
+        Assert.Equal(expected, parsed.Value.Range);
+    }
+
+    [Fact]
+    public void The_playback_range_probe_reads_a_dolby_vision_profile_when_the_record_names_one()
+    {
+        const string profile5 = """
+            {"streams":[{"side_data_list":[{"side_data_type":"DOVI configuration record","dv_profile":5}]}]}
+            """;
+        const string unread = """
+            {"streams":[{"side_data_list":[{"side_data_type":"DOVI configuration record"}]}]}
+            """;
+
+        Assert.Equal(5, FfprobeVideoRangeProbe.Parse(profile5)!.Value.Profile);
+        Assert.Null(FfprobeVideoRangeProbe.Parse(unread)!.Value.Profile);
     }
 
     [Fact]

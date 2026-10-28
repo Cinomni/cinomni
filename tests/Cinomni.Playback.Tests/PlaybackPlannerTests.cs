@@ -323,6 +323,20 @@ public sealed class PlaybackPlannerTests
     }
 
     [Fact]
+    public void Dolby_vision_profile_5_is_not_tone_mapped_with_the_hdr10_curve()
+    {
+        _hardwareCapabilities.Publish(FullBuild);
+        var profile5 = new PlaybackSource(
+            "matroska", "hevc", 2160, ["aac"], 3840, VideoRange: VideoRangeType.DoVi, DolbyVisionProfile: 5);
+
+        var plan = _planner.Plan(profile5, Client(video: ["h264"]));
+
+        Assert.False(plan.ToneMapped);
+        Assert.Contains(plan.TranscodeReasons, r => r.Contains("profile 5", StringComparison.Ordinal));
+        Assert.Contains(plan.Decisions, d => d is { Property: "dynamicRange", Actual: "DoVi", Verdict: "fail" });
+    }
+
+    [Fact]
     public void An_hdr_source_without_tone_mapping_filters_is_converted_and_the_washed_out_colours_explained()
     {
         _hardwareCapabilities.Publish(FullBuild with { ToneMapping = false });

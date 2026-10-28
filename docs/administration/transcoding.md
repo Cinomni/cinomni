@@ -87,8 +87,11 @@ Run the test again after installing or updating a driver; no restart is needed.
 
 - Converting 4K HDR on the CPU is slower than real time with the default resources. Give the container
   8–16 CPUs and about 6 GB (`CINOMNI_CPUS`, `CINOMNI_MEMORY`), or use a GPU.
-- Tone mapping brings HDR10, HLG and Dolby Vision (profiles 7 and 8) to SDR when converting. Dolby
-  Vision profile 5 is not tone-mapped correctly yet and can show a green or purple cast.
+- Tone mapping brings HDR10, HLG and Dolby Vision profiles 7 and 8 to SDR when converting. Profile 5
+  has no HDR10 base layer. The HDR10 curve is not applied to it: that curve was what painted it green
+  or purple. This image's FFmpeg cannot interpret profile 5's colour, so a conversion does not correct
+  it, and the plan says so. A Dolby Vision file whose profile could not be read is still tone-mapped
+  as HDR10.
 - A device that plays the file directly receives it untouched, so an HDR screen shows real HDR.
 
 ## Everything else

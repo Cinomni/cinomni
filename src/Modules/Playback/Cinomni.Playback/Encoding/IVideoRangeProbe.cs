@@ -14,6 +14,13 @@ public interface IVideoRangeProbe
 {
     /// <summary>The range of the first video stream, or null when it cannot be told.</summary>
     Task<VideoRangeType?> ProbeAsync(Guid versionId, string path, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The Dolby Vision profile from the configuration record, or null when the stream is not Dolby
+    /// Vision or the probe did not say. Profile 5 has no HDR10 base layer; 7 and 8 do.
+    /// </summary>
+    Task<int?> DolbyVisionProfileAsync(Guid versionId, string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult<int?>(null);
 }
 
 /// <summary>The probe a host without FFmpeg gets: it never knows, so the file is taken for SDR.</summary>
@@ -33,25 +40,33 @@ public sealed class FfprobeVideoRangeProbe(FfmpegEncoderOptions options, ILogger
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
     private const int MaxCachedVersions = 4096;
 
-    private readonly ConcurrentDictionary<Guid, VideoRangeType?> _known = new();
+    private readonly ConcurrentDictionary<Guid, Reading> _known = new();
 
-    public async Task<VideoRangeType?> ProbeAsync(Guid versionId, string path, CancellationToken cancellationToken = default)
+    public async Task<VideoRangeType?> ProbeAsync(Guid versionId, string path, CancellationToken cancellationToken = default) =>
+        (await ReadAsync(versionId, path, cancellationToken)).Range;
+
+    public async Task<int?> DolbyVisionProfileAsync(Guid versionId, string path, CancellationToken cancellationToken = default) =>
+        (await ReadAsync(versionId, path, cancellationToken)).DolbyVisionProfile;
+
+    private async Task<Reading> ReadAsync(Guid versionId, string path, CancellationToken cancellationToken)
     {
         if (_known.TryGetValue(versionId, out var cached))
         {
             return cached;
         }
 
-        var range = await RunAsync(path, cancellationToken);
+        var reading = await RunAsync(path, cancellationToken);
         if (_known.Count < MaxCachedVersions)
         {
-            _known[versionId] = range;
+            _known[versionId] = reading;
         }
 
-        return range;
+        return reading;
     }
 
-    private async Task<VideoRangeType?> RunAsync(string path, CancellationToken cancellationToken)
+    private readonly record struct Reading(VideoRangeType? Range, int? DolbyVisionProfile);
+
+    private async Task<Reading> RunAsync(string path, CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -64,7 +79,7 @@ public sealed class FfprobeVideoRangeProbe(FfmpegEncoderOptions options, ILogger
         foreach (var arg in (string[])
                  [
                      "-v", "error", "-select_streams", "v:0", "-print_format", "json",
-                     "-show_entries", "stream=color_transfer:stream_side_data=side_data_type", path,
+                     "-show_entries", "stream=color_transfer:stream_side_data=side_data_type,dv_profile", path,
                  ])
         {
             startInfo.ArgumentList.Add(arg);
@@ -85,22 +100,28 @@ public sealed class FfprobeVideoRangeProbe(FfmpegEncoderOptions options, ILogger
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 process.Kill(entireProcessTree: true);
-                return null;
+                return default;
             }
 
             await stderr;
-            return process.ExitCode == 0 ? Parse(await stdout) : null;
+            if (process.ExitCode != 0)
+            {
+                return default;
+            }
+
+            var parsed = Parse(await stdout);
+            return parsed is null ? default : new Reading(parsed.Value.Range, parsed.Value.Profile);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or JsonException)
         {
             // Never the path: it is the viewer's library layout.
             logger.LogWarning("Could not read a video's dynamic range: {Reason}", ex.GetType().Name);
-            return null;
+            return default;
         }
     }
 
-    /// <summary>Pure: ffprobe's JSON for one stream to a range — Dolby Vision by its side data, else by the transfer function.</summary>
-    internal static VideoRangeType? Parse(string json)
+    /// <summary>Pure: ffprobe's JSON for one stream to a range and, when present, its Dolby Vision profile.</summary>
+    internal static (VideoRangeType Range, int? Profile)? Parse(string json)
     {
         using var document = JsonDocument.Parse(json);
         if (!document.RootElement.TryGetProperty("streams", out var streams)
@@ -110,13 +131,43 @@ public sealed class FfprobeVideoRangeProbe(FfmpegEncoderOptions options, ILogger
             return null;
         }
 
-        return VideoRanges.From(streams[0]);
+        var stream = streams[0];
+        return (VideoRanges.From(stream), VideoRanges.DolbyVisionProfile(stream));
     }
 }
 
 /// <summary>The one reading of an ffprobe stream's dynamic range, shared by Import's probe and Playback's.</summary>
 public static class VideoRanges
 {
+    /// <summary>
+    /// The <c>dv_profile</c> on a Dolby Vision configuration record, or null when there is no such record
+    /// or it did not name a profile. Profile 5 has no HDR10 base layer; 7 and 8 do.
+    /// </summary>
+    public static int? DolbyVisionProfile(JsonElement stream)
+    {
+        if (!stream.TryGetProperty("side_data_list", out var sideData) || sideData.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var entry in sideData.EnumerateArray())
+        {
+            if (!entry.TryGetProperty("side_data_type", out var type)
+                || type.GetString() is not { } name
+                || !name.Contains("DOVI", StringComparison.OrdinalIgnoreCase)
+                || !entry.TryGetProperty("dv_profile", out var profile)
+                || !profile.TryGetInt32(out var number)
+                || number is < 0 or > 255)
+            {
+                continue;
+            }
+
+            return number;
+        }
+
+        return null;
+    }
+
     /// <summary>Dolby Vision by its configuration record, HDR10 by PQ, HLG by its curve; anything else is SDR.</summary>
     public static VideoRangeType From(JsonElement stream)
     {

@@ -85,7 +85,7 @@ criteria are met.
 | **Import** | Hardlink or copy, rename, land season packs, upgrade and recycle the old file, repair names already on disk |
 | **Subtitles** | Fetch wanted languages from two providers, check each download against the audio and re-time it, and show them in the player, or burn picture subtitles in |
 | **Playback** | Play in the browser with Direct Play, remux or HLS; choose audio, subtitles, quality and speed; resume where you left off |
-| **Transcoding** | Use VAAPI, Quick Sync, NVENC or AMF once they pass a real test; tone-map HDR and Dolby Vision; tune everything live |
+| **Transcoding** | Use VAAPI, Quick Sync, NVENC or AMF once they pass a real test; tone-map HDR and Dolby Vision profiles 7 and 8; tune everything live |
 | **Household** | Invite accounts, approve requests, cap open requests per account, enable two-factor sign-in |
 | **Operation** | A console for health, jobs, imports and settings; backups; OpenTelemetry; security headers and a sign-in throttle |
 
@@ -95,7 +95,7 @@ criteria are met.
 |---|---|---|
 | **Usenet**: scope reopened; the indexer model already speaks Newznab | Python subtitle worker (many providers, sync, mods) | Music, books, comics, images |
 | **The two hardware drills**: a real VPN drop, a real GPU | WebSocket / remote control across sessions | Jellyfin-compatible client API |
-| **Dolby Vision profile 5** tone mapping | High availability, multi-server | Native mobile and TV apps |
+| | High availability, multi-server | Native mobile and TV apps |
 | | | Kubernetes, plugins, federation |
 | | | Native Windows/macOS as a *supported* deployment |
 
@@ -876,7 +876,7 @@ host.
   tone-mapped, scaled first because that measured twice as fast on a 4K source.
 - **What it has not had** is a real GPU passing the tests: on the only host it ran on (Docker Desktop
   on Windows) no GPU reaches the container, so what was verified is the software path and the
-  negative detection. Dolby Vision profile 5 is known to tone-map with wrong colours.
+  negative detection. Dolby Vision profile 5 is no longer tone-mapped with the HDR10 curve, which was the green or purple cast; this image's FFmpeg still cannot interpret that colour, so a conversion does not claim to correct it.
 
 </details>
 

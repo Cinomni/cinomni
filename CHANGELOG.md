@@ -27,6 +27,12 @@ under the rules in *Versioning* below.
   cannot be taken, a reply for a different address, and a household source address are still not
   healthy. An upgrade needs a rebuilt sidecar image; the published `0.1.0-alpha.3` image still has
   the old check.
+- **Dolby Vision profile 5 is no longer tone-mapped with the HDR10 curve.** That curve treats the
+  picture as PQ in a standard colour space, which is what painted a profile 5 file green or purple:
+  profile 5 has no HDR10 base layer, and this image's FFmpeg cannot interpret its colour. A conversion
+  of a file whose profile was read as 5 does not apply the curve, and the plan says so. Profiles 7 and
+  8 still tone-map from their HDR10 base layer. A Dolby Vision file whose profile could not be read is
+  still tone-mapped as HDR10.
 - **A film is downloaded only when the release is that film.** A film's releases were judged on
   quality, size and format alone. An indexer that searches by text answers with anything carrying the
   words, so a search for "Teddy" (2021) accepted a 2160p Teddy Swims concert, which was downloaded and
