@@ -56,7 +56,7 @@ public sealed record ReleaseSelected(
 /// <summary>What a selected release was, as the indexer described it at the moment it was chosen.</summary>
 /// <param name="Seeders">Seeders the indexer reported, or null when it did not say.</param>
 /// <param name="Leechers">Leechers the indexer reported, or null when it did not say.</param>
-public sealed record SelectedReleaseInfo(string Title, string IndexerName, int? Seeders, int? Leechers);
+public sealed record SelectedReleaseInfo(string Title, string IndexerName, int? Seeders, int? Leechers, string? Protocol = null);
 
 /// <summary>No candidate from a search passed the profile — nothing to acquire this round.</summary>
 public sealed record NoAcceptableRelease(

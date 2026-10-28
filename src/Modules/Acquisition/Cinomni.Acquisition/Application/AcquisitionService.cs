@@ -140,6 +140,7 @@ public sealed class AcquisitionService(
         string downloadUrl,
         IReadOnlyList<Guid>? unitIds = null,
         AttemptRelease? release = null,
+        string? protocol = null,
         CancellationToken cancellationToken = default)
     {
         var intent = await ResolveGoalAsync(targetId, unitIds, cancellationToken);
@@ -203,7 +204,7 @@ public sealed class AcquisitionService(
             await eventBus.PublishAsync(
                 new DownloadQueued(
                     attempt.Id, intent.Id, intent.WorkId, intent.TargetId, attempt.ReleaseGuid, attempt.DownloadUrl,
-                    SavePath: null, UnitIds: claimedUnits),
+                    SavePath: null, UnitIds: claimedUnits, Protocol: protocol),
                 token);
         }, cancellationToken);
     }

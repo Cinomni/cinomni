@@ -7,6 +7,7 @@ using Cinomni.Downloads.EventHandlers;
 using Cinomni.Downloads.Messaging;
 using Cinomni.Downloads.Persistence;
 using Cinomni.Downloads.Streaming;
+using Cinomni.Downloads.Usenet;
 using Cinomni.Kernel.Diagnostics;
 using Cinomni.Kernel.Messaging;
 using Cinomni.Kernel.Net;
@@ -63,7 +64,8 @@ public static class DownloadsModule
         this IServiceCollection services,
         Action<DownloadRetentionOptions>? configureRetention = null,
         Action<TunnelOptions>? configureTunnel = null,
-        Action<TransferOptions>? configureTransfers = null)
+        Action<TransferOptions>? configureTransfers = null,
+        Action<UsenetOptions>? configureUsenet = null)
     {
         services.AddModuleDbContext<DownloadsDbContext>();
 
@@ -98,6 +100,19 @@ public static class DownloadsModule
         // tunnel that has since been removed, which is the documented way back to a direct connection.
         // A job registered only while the guard is on would disappear exactly when it is needed, and
         // would leave an enabled row behind in the scheduler that no registration answers.
+        var usenet = new UsenetOptions();
+        configureUsenet?.Invoke(usenet);
+        usenet.Validate();
+        services.AddSingleton(usenet);
+        services.AddScoped<UsenetDownloadService>();
+        services.AddCommand<AdvanceUsenetCommand>(DownloadCommandNames.AdvanceUsenet);
+        services.AddScoped<ICommandHandler<AdvanceUsenetCommand>, AdvanceUsenetCommandHandler>();
+        services.AddScheduledJob<AdvanceUsenetCommand>(
+            "downloads.usenet", DownloadCommandNames.AdvanceUsenet, TimeSpan.FromSeconds(15));
+        services
+            .AddHttpClient(UsenetDownloadService.ClientName, client => client.Timeout = FetchTimeout)
+            .ConfigurePrimaryHttpMessageHandler(CreateSsrfSafeHandler);
+
         services.AddCommand<CheckTunnelCommand>(DownloadCommandNames.CheckTunnel);
         services.AddScoped<ICommandHandler<CheckTunnelCommand>, CheckTunnelCommandHandler>();
         services.AddScheduledJob<CheckTunnelCommand>(

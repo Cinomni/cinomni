@@ -1,3 +1,4 @@
+using Cinomni.Downloads.Usenet;
 using Microsoft.EntityFrameworkCore;
 
 namespace Cinomni.Downloads.Persistence;
@@ -39,6 +40,7 @@ public sealed class DownloadsDbContext(DbContextOptions<DownloadsDbContext> opti
         task.Property(x => x.DownloadUrl).HasMaxLength(2048);
         task.Property(x => x.SavePath).HasMaxLength(2048);
         task.Property(x => x.InfoHash).HasMaxLength(64);
+        task.Property(x => x.Protocol).HasMaxLength(20).HasDefaultValue(DownloadProtocols.Torrent);
         task.Property(x => x.Name).HasMaxLength(500);
         task.Property(x => x.ContentPath).HasMaxLength(2048);
         task.Property(x => x.LastError).HasMaxLength(500);

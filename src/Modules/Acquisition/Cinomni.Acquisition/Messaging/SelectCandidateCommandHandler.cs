@@ -19,6 +19,7 @@ public sealed class SelectCandidateCommandHandler(IAcquisitionCommands commands)
             command.DownloadUrl,
             command.UnitIds,
             command.Release,
+            command.Protocol,
             cancellationToken);
         return Result.Success();
     }

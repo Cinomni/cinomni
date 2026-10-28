@@ -9,6 +9,7 @@ public static class DownloadCommandNames
     public const string SaveCheckpoints = "downloads.save-checkpoints";
     public const string TrimCheckpoints = "downloads.trim-checkpoints";
     public const string CheckTunnel = "downloads.check-tunnel";
+    public const string AdvanceUsenet = "downloads.advance-usenet";
     public const string RemoveGoalDownloads = "downloads.remove-goal-downloads";
 }
 
@@ -28,7 +29,8 @@ public sealed record AddDownloadCommand(
     Guid TargetId,
     string ReleaseGuid,
     string DownloadUrl,
-    IReadOnlyList<Guid>? UnitIds = null) : ICommand;
+    IReadOnlyList<Guid>? UnitIds = null,
+    string? Protocol = null) : ICommand;
 
 /// <summary>
 /// Periodic checkpoint: saves fresh resume data for every active task so a restart can resume
@@ -50,6 +52,12 @@ public sealed record TrimCheckpointsCommand : ICommand;
 /// and nothing else, and a re-run of the transition itself is refused by the state row.
 /// </summary>
 public sealed record CheckTunnelCommand : ICommand;
+
+/// <summary>
+/// Advances one in-flight Usenet download a short way. Parameterless and scheduled: a restart picks
+/// the same rows up again, and a tick that finds nothing to do writes nothing.
+/// </summary>
+public sealed record AdvanceUsenetCommand : ICommand;
 
 /// <summary>
 /// Drops every torrent a cancelled acquisition goal claimed — its work was removed from the catalog.

@@ -44,7 +44,8 @@ public sealed class ReleaseSelectedHandler(
                 domainEvent.UnitIds,
                 domainEvent.Release is { } release
                     ? new AttemptRelease(release.Title, release.IndexerName, release.Seeders, release.Leechers)
-                    : null),
+                    : null,
+                domainEvent.Release?.Protocol),
             idempotencyKey: $"select-candidate:{domainEvent.EvaluationId}:{targetId}",
             cancellationToken);
     }

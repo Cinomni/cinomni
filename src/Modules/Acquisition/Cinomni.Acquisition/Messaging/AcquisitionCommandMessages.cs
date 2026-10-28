@@ -50,7 +50,8 @@ public sealed record SelectCandidateCommand(
     string ReleaseGuid,
     string DownloadUrl,
     IReadOnlyList<Guid>? UnitIds = null,
-    AttemptRelease? Release = null) : ICommand;
+    AttemptRelease? Release = null,
+    string? Protocol = null) : ICommand;
 
 /// <summary>
 /// The in-flight download began transferring — enqueued by Downloads' <c>DownloadStarted</c> reaction.

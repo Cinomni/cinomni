@@ -11,7 +11,8 @@ you choose your own sources, under **Console → Indexers**.
 | **Torznab / Newznab** | Any service that speaks one of these APIs, including an indexer proxy you already run. |
 | **Definition** | A site that speaks neither. You upload a declarative definition (JSON) describing how to search it and read its results. |
 
-Only torrents can be downloaded: Usenet is not supported, even from a Newznab indexer.
+A Newznab release that is already a video file can be downloaded when a Usenet server is configured
+(see [Downloads](downloads.md#usenet)). A packed release is refused. Repair and unpacking are not built.
 
 ## Adding a Torznab or Newznab indexer
 

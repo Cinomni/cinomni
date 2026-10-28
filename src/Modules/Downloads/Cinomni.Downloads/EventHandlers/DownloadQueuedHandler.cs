@@ -22,7 +22,8 @@ public sealed class DownloadQueuedHandler(ICommandQueue commandQueue) : IEventHa
                 domainEvent.TargetId,
                 domainEvent.ReleaseGuid,
                 domainEvent.DownloadUrl,
-                domainEvent.UnitIds),
+                domainEvent.UnitIds,
+                domainEvent.Protocol),
             idempotencyKey: $"add-download:{domainEvent.AttemptId}",
             cancellationToken);
     }
