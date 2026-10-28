@@ -11,6 +11,9 @@ public sealed class UsenetTests
     /// <summary>How long a session may wait for a server that has gone quiet, where a test cannot wait a minute.</summary>
     private static readonly TimeSpan Brief = TimeSpan.FromMilliseconds(300);
 
+    /// <summary>For a test that must be stopped by something other than the clock, even on a slow machine.</summary>
+    private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);
+
     [Fact]
     public void An_nzb_names_the_quoted_file_and_orders_its_segments()
     {
@@ -228,6 +231,28 @@ public sealed class UsenetTests
         // Exactly this type: an outage is retried and a missing article never comes back.
         await Within(Assert.ThrowsAsync<InvalidOperationException>(
             () => client.ArticleAsync("gone@example", CancellationToken.None)));
+    }
+
+    [Fact]
+    public async Task A_server_that_never_ends_an_article_is_refused_not_read_into_memory()
+    {
+        // A server that sends faster than the time limit runs out would fill memory long before it did.
+        // The limit is on what is read, and a refusal, not an outage: the same server sends the same again.
+        await using var server = new FakeNntpServer { Behavior = _ => ConnectionBehavior.FloodArticle };
+        await using var client = await NntpClient.ConnectAsync(server.Options, CancellationToken.None, Generous);
+
+        await Within(Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.ArticleAsync("part@example", CancellationToken.None)));
+    }
+
+    [Fact]
+    public async Task A_reply_that_never_reaches_a_line_end_is_refused_not_read_into_memory()
+    {
+        // No line end, so a limit on how many lines an article may have would never be reached.
+        await using var server = new FakeNntpServer { Behavior = _ => ConnectionBehavior.EndlessGreeting };
+
+        await Within(Assert.ThrowsAsync<InvalidOperationException>(
+            () => NntpClient.ConnectAsync(server.Options, CancellationToken.None, Generous)));
     }
 
     /// <summary>A test that would wait for ever fails instead of holding the run.</summary>

@@ -22,21 +22,32 @@ internal sealed class NntpClient : IAsyncDisposable
     /// </summary>
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// The most one article may be, as the server sends it. A part is at most <see cref="Yenc.MaxDecodedBytes"/>
+    /// once decoded, and the escapes and line ends of real data add a few percent to that, so twice is room
+    /// for any part this installation would decode and none for a server that never stops.
+    /// </summary>
+    public const int MaxArticleBytes = Yenc.MaxDecodedBytes * 2;
+
+    /// <summary>The most a greeting, a reply line or a failure message may be.</summary>
+    public const int MaxReplyBytes = 64 * 1024;
+
     private static readonly TimeSpan QuitTimeout = TimeSpan.FromSeconds(5);
 
     private readonly StreamReader reader;
     private readonly StreamWriter writer;
-    private readonly Stream stream;
+    private readonly BudgetedStream stream;
     private readonly TimeSpan timeout;
 
     private NntpClient(Stream stream, TimeSpan timeout)
     {
-        this.stream = stream;
+        this.stream = new BudgetedStream(stream);
+        this.stream.Allow(MaxReplyBytes);
         this.timeout = timeout;
         // An article is bytes, not text, and yEnc uses all 256 values. Latin1 is the view that keeps one
         // character per byte; ASCII would turn every byte above 127 into '?' and keep the length.
-        reader = new StreamReader(stream, Encoding.Latin1, detectEncodingFromByteOrderMarks: false, bufferSize: -1, leaveOpen: true);
-        writer = new StreamWriter(stream, Encoding.ASCII, leaveOpen: true) { NewLine = "\r\n", AutoFlush = true };
+        reader = new StreamReader(this.stream, Encoding.Latin1, detectEncodingFromByteOrderMarks: false, bufferSize: -1, leaveOpen: true);
+        writer = new StreamWriter(this.stream, Encoding.ASCII, leaveOpen: true) { NewLine = "\r\n", AutoFlush = true };
     }
 
     public static Task<NntpClient> ConnectAsync(UsenetOptions options, CancellationToken cancellationToken, TimeSpan? timeout = null)
@@ -129,6 +140,7 @@ internal sealed class NntpClient : IAsyncDisposable
         var id = messageId.StartsWith('<') ? messageId : "<" + messageId + ">";
         await CommandAsync("ARTICLE " + id, cancellationToken);
         await ExpectAsync(220, cancellationToken);
+        stream.Allow(MaxArticleBytes);
         var body = new StringBuilder();
         while (true)
         {
@@ -151,8 +163,12 @@ internal sealed class NntpClient : IAsyncDisposable
         return body.ToString();
     }
 
-    private async Task CommandAsync(string command, CancellationToken cancellationToken) =>
+    private async Task CommandAsync(string command, CancellationToken cancellationToken)
+    {
+        // Each command starts a reply, and the reply a fresh allowance: a line, not an article.
+        stream.Allow(MaxReplyBytes);
         await writer.WriteLineAsync(command.AsMemory(), cancellationToken);
+    }
 
     private async Task ExpectAsync(int first, CancellationToken cancellationToken) =>
         await ExpectAsync(first, first, cancellationToken);
