@@ -5,11 +5,16 @@ The sidecar is the one process in Cinomni that talks to the swarm, so it is the 
 Three independent facts have to hold, and each of them fails on its own:
 
 1. the tunnel device exists and carries an address — a tunnel that never came up;
-2. the default route leaves through that device — a tunnel that is up but not routed, which is what
-   a restarted tunnel process looks like for the seconds before it reinstalls its routes;
-3. the source address the kernel would put on an outbound connection is the tunnel's address — the
-   leak that the first two miss, because a policy route or a second interface can carry traffic off
-   the box while the tunnel sits there looking healthy.
+2. the route the kernel would use for an ordinary packet leaves through that device. That is the
+   lookup `ip route get` performs, policy rules included, not the default row of the main table. A
+   WireGuard tunnel leaves the main default on the underlay so its own handshake can still leave, and
+   installs the route everything else uses in another table. Reading the main table refuses that
+   tunnel, and it can also miss a rule that sends traffic the other way. A tunnel that is up but not
+   routed still fails here: a restarted tunnel process looks like this for the seconds before it
+   reinstalls its routes;
+3. the source address the kernel would put on an outbound connection is the tunnel's address. A route
+   that names the tunnel device is not that fact: the kernel can still put the household's address on
+   the packet, and a household address is a leak whether or not the route looks right.
 
 Fact 3 is the leak detector, and it is deliberately **silent**: a UDP socket that is `connect()`ed
 sends nothing (there is no handshake), but the kernel still performs the full route lookup and
@@ -61,6 +66,19 @@ _SIOCGIFADDR = 0x8915
 _IFNAME_FIELD = 16
 _IFADDR_OFFSET = 20
 _IFADDR_LENGTH = 4
+
+# A route query, not a route change. The numbers are the kernel's (`linux/rtnetlink.h`), and the
+# message is host byte order, which is how netlink is defined. A GETROUTE with a destination and no
+# table is the lookup `ip route get` performs.
+_RTM_GETROUTE = 26
+_RTM_NEWROUTE = 24
+_NLM_F_REQUEST = 1
+_NLMSG_ERROR = 2
+_NLMSG_DONE = 3
+_NLMSG_HDRLEN = 16
+_RTMSG_SIZE = 12
+_RTA_DST = 1
+_RTA_OIF = 4
 
 # Where the route probe pretends to be going. It is never contacted: `connect()` on a UDP socket
 # performs the route lookup and returns, so nothing is sent to this address and nothing needs to
@@ -166,12 +184,18 @@ def normalize_policy(value):
 
 
 def parse_default_route(route_table):
-    """The interface the IPv4 default route leaves through, from the kernel's own routing table.
+    """The interface of the main table's IPv4 default route, from `/proc/net/route`.
 
-    `/proc/net/route` is a fixed-column text table: a header line, then one row per route whose
-    first field is the interface and whose second is the destination as a little-endian hex word.
-    The default route is the row whose destination is all zeroes. When several exist, the one with
-    the lowest metric wins, which is the column the kernel itself orders by.
+    This is not the route the guard decides on. That file is the main table only, and a WireGuard
+    tunnel leaves its default there on the underlay while the route ordinary packets use lives in
+    another table, selected by a policy rule. Deciding from this row refuses a healthy tunnel, and
+    it cannot see a rule that sends traffic the other way. The guard asks the kernel instead
+    (`route_lookup_device`). This parser stays because a dump of the main table is still a real
+    observation, and the row that wins is the lowest metric, not the first row.
+
+    The file is a fixed-column text table: a header line, then one row per route whose first field
+    is the interface and whose second is the destination as a little-endian hex word. The default
+    route is the row whose destination is all zeroes.
     """
     best_device = None
     best_metric = None
@@ -190,6 +214,81 @@ def parse_default_route(route_table):
             best_device, best_metric = fields[0], metric
 
     return best_device
+
+
+def _aligned(length):
+    """Netlink's alignment: every header and attribute is padded up to a multiple of four."""
+    return (length + 3) & ~3
+
+
+def parse_route_lookup(message, destination=None):
+    """The output interface index from an RTM_GETROUTE reply, or None.
+
+    None is every failure: an error, a truncated message, an attribute that does not parse, and a
+    reply that names no interface. A guard that could not read the lookup has not verified a route,
+    and must not invent one from a partial message or from the source address sitting next to it.
+    The main table's id, which a policy-routed reply still carries, is not an interface and is not
+    read.
+
+    When `destination` is given, the reply has to be the lookup for that address. A reply that names
+    an interface and a different address, or that names an interface and no address, is not this
+    process's question. Omitting it reads the index alone, which is what a test of the wire format
+    needs and not what the guard decides from.
+    """
+    if not isinstance(message, (bytes, bytearray)) or not message:
+        return None
+
+    offset = 0
+    while offset + _NLMSG_HDRLEN <= len(message):
+        nlmsg_len, nlmsg_type = struct.unpack_from("IH", message, offset)
+        if nlmsg_len < _NLMSG_HDRLEN or offset + nlmsg_len > len(message):
+            return None
+        if nlmsg_type in (_NLMSG_ERROR, _NLMSG_DONE):
+            return None
+        if nlmsg_type == _RTM_NEWROUTE:
+            if nlmsg_len < _NLMSG_HDRLEN + _RTMSG_SIZE:
+                return None
+            return _accepted_oif(
+                message,
+                offset + _NLMSG_HDRLEN + _RTMSG_SIZE,
+                offset + nlmsg_len,
+                destination,
+            )
+        offset += _aligned(nlmsg_len)
+
+    return None
+
+
+def _accepted_oif(message, start, end, destination):
+    """The output interface, if this attribute list is the lookup for `destination`.
+
+    A truncated list is not a route, even when an interface index was already seen: the rest of the
+    message is what says which address that index was for.
+    """
+    pos = start
+    found = None
+    replied = None
+    while pos + 4 <= end:
+        rta_len, rta_type = struct.unpack_from("HH", message, pos)
+        if rta_len < 4 or pos + rta_len > end:
+            return None
+        if rta_type == _RTA_OIF:
+            if rta_len < 8:
+                return None
+            found = struct.unpack_from("I", message, pos + 4)[0] or None
+        elif rta_type == _RTA_DST and rta_len >= 8:
+            replied = bytes(message[pos + 4 : pos + 8])
+        pos += _aligned(rta_len)
+
+    if destination is None:
+        return found
+    try:
+        expected = socket.inet_aton(destination)
+    except OSError:
+        return None
+    if replied != expected:
+        return None
+    return found
 
 
 def classify(
@@ -274,11 +373,52 @@ def observation_failed(tunnel_device, now=None):
     )
 
 
-# -- probes (impure; each one is a single syscall with every failure treated as "unknown") --------
+# -- probes (impure; a failure to ask is "unknown", never a verification) --------------------------
+
+
+def route_lookup_device(destination=PROBE_DESTINATION):
+    """The interface an ordinary packet to `destination` would leave through.
+
+    This is the kernel's own lookup, the one `ip route get` prints, policy rules included. Nothing
+    is sent: the query is a netlink request to the local kernel, the same class of observation as
+    the silent UDP connect. The reply counts only when it is for this destination. A lookup that
+    cannot be taken — no netlink, no permission, no answer, an index that names nothing, a reply for
+    another address — is None, which is not a route through the tunnel. It is never filled in from
+    the main table, and never inferred from the source address the lookup also reports.
+    """
+    if not hasattr(socket, "AF_NETLINK") or not hasattr(socket, "NETLINK_ROUTE"):
+        return None
+
+    probe = None
+    try:
+        destination_bytes = socket.inet_aton(destination)
+        attributes = struct.pack("HH", 4 + len(destination_bytes), _RTA_DST) + destination_bytes
+        route = struct.pack("BBBBBBBBI", socket.AF_INET, 32, 0, 0, 0, 0, 0, 0, 0)
+        payload = route + attributes
+        header = struct.pack(
+            "IHHII", _NLMSG_HDRLEN + len(payload), _RTM_GETROUTE, _NLM_F_REQUEST, 1, 0
+        )
+        probe = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, socket.NETLINK_ROUTE)
+        probe.bind((0, 0))
+        probe.settimeout(2)
+        probe.send(header + payload)
+        index = parse_route_lookup(probe.recv(8192), destination)
+        if not index:
+            return None
+        return socket.if_indextoname(index)
+    except (OSError, ValueError, AttributeError):
+        return None
+    finally:
+        if probe is not None:
+            probe.close()
 
 
 def read_route_table(path="/proc/net/route"):
-    """The kernel's routing table as text, or an empty table when it cannot be read."""
+    """The main routing table as text, or an empty table when it cannot be read.
+
+    Not the route the guard decides on — see `parse_default_route`. Kept so a caller that wants the
+    main table can still read it without that failure becoming an exception.
+    """
     try:
         with open(path, "r", encoding="ascii", errors="replace") as handle:
             return handle.read()
@@ -416,7 +556,11 @@ def ipv6_egress_leaks(observed_source, device_addresses):
 
 
 def observe(tunnel_device, now=None):
-    """One full observation: read the device, the routing table and the source address, then classify."""
+    """One full observation: the device, the route the kernel would use, and the source address.
+
+    The route is `route_lookup_device`, not the main table. Those two disagree on a healthy
+    WireGuard tunnel, and the kernel's lookup is the one a packet would follow.
+    """
     moment = int(time.time()) if now is None else now
     if not tunnel_device:
         return classify("", False, None, None, None, moment)
@@ -425,7 +569,7 @@ def observe(tunnel_device, now=None):
         tunnel_device,
         device_present(tunnel_device),
         device_address(tunnel_device),
-        parse_default_route(read_route_table()),
+        route_lookup_device(),
         observed_source_address(),
         moment,
         ipv6_leak=ipv6_egress_leaks(

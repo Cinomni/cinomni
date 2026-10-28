@@ -216,7 +216,7 @@ describe('TransferPanel network-held state', () => {
     // Assert — a held transfer is explained, not presented as an ordinary pause.
     expect(await screen.findByText('Network held')).toBeInTheDocument()
     expect(
-      screen.getByText(/default route no longer points at the tunnel/i),
+      screen.getByText(/would not leave through the tunnel/i),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument()
   })

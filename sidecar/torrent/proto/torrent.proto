@@ -168,7 +168,8 @@ message TunnelObservation {
   string tunnel_device = 1;
   // The device exists and carries an address.
   bool tunnel_up = 2;
-  // The IPv4 default route leaves through that device.
+  // The route the kernel would use for an ordinary IPv4 packet leaves through that device.
+  // Policy rules are part of that lookup: the main table's default is not this fact.
   bool default_route_via_tunnel = 3;
   // The source address the kernel would put on an outbound packet is the tunnel's own address.
   // This is the leak check: it catches traffic that would leave with the household's identity

@@ -14,7 +14,7 @@ const REASONS: Record<string, string> = {
   'tunnel-egress-verified': 'Torrent traffic leaves through the tunnel.',
   'tunnel-device-missing': 'The tunnel device is not present. The tunnel container is probably down.',
   'tunnel-device-has-no-address': 'The tunnel device exists but has no address, so it cannot carry traffic yet.',
-  'default-route-not-via-tunnel': 'The default route no longer points at the tunnel, so traffic would leave unprotected.',
+  'default-route-not-via-tunnel': 'An ordinary packet would not leave through the tunnel, so traffic would leave unprotected.',
   'egress-identity-not-the-tunnel': 'Traffic is leaving under an address that is not the tunnel’s.',
   'ipv6-egress-not-the-tunnel': 'IPv6 traffic is leaving outside the tunnel, even though IPv4 is inside it.',
   'no-egress-route': 'There is no route out at all.',

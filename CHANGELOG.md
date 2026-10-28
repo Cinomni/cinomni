@@ -10,8 +10,23 @@ under the rules in *Versioning* below.
 
 ## Unreleased
 
+### Added
+
+- **A WireGuard peer you bring yourself.** `VPN_SERVICE_PROVIDER=custom` now forwards
+  `WIREGUARD_PUBLIC_KEY`, `WIREGUARD_ENDPOINT_IP` and `WIREGUARD_ENDPOINT_PORT` from `.env`. The
+  endpoint must be an IP. Leave them empty for a provider on gluetun's list. The private key stays
+  in `.env` and is not a setting.
+
 ### Fixed
 
+- **A healthy WireGuard tunnel is no longer refused.** The kill-switch read only the main routing
+  table. A WireGuard tunnel leaves that default on the underlay so its own handshake can still
+  leave, and installs the route ordinary packets use in another table. Gluetun does this. The
+  sidecar reported `default-route-not-via-tunnel` and, under `block`, refused to start. The check
+  is now the kernel's own lookup, the one `ip route get` performs. A missing device, a lookup that
+  cannot be taken, a reply for a different address, and a household source address are still not
+  healthy. An upgrade needs a rebuilt sidecar image; the published `0.1.0-alpha.3` image still has
+  the old check.
 - **A film is downloaded only when the release is that film.** A film's releases were judged on
   quality, size and format alone. An indexer that searches by text answers with anything carrying the
   words, so a search for "Teddy" (2021) accepted a 2160p Teddy Swims concert, which was downloaded and
