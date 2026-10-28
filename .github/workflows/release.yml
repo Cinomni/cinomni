@@ -20,6 +20,10 @@
 #
 # Only this workflow can write packages, and only on a tag: the token's `packages: write` exists in
 # no other workflow, and pull requests never reach this file.
+#
+# After the release is published, the notify job asks Cloudflare to rebuild the public site.
+# CINOMNI_WEB_DEPLOY_HOOK is a Workers Builds deploy hook for that site's main branch. It cannot
+# change the site, the Worker, or the web repository, and the URL is not printed.
 name: Release
 
 on:
@@ -254,4 +258,30 @@ jobs:
             gh release upload "$VERSION" "${assets[@]}" --clobber
           else
             gh release create "$VERSION" --verify-tag --title "Cinomni $VERSION" --notes-file notes.md "${flags[@]}" "${assets[@]}"
+          fi
+
+  notify-site:
+    name: notify-site
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Rebuild the public site
+        env:
+          HOOK: ${{ secrets.CINOMNI_WEB_DEPLOY_HOOK }}
+        run: |
+          set -euo pipefail
+          hook="${HOOK-}"
+          case "$hook" in
+            https://api.cloudflare.com/client/v4/workers/builds/deploy_hooks/*) ;;
+            *)
+              echo "CINOMNI_WEB_DEPLOY_HOOK is missing or is not a Workers Builds deploy hook." >&2
+              exit 1
+              ;;
+          esac
+          if ! curl --fail --silent --output /dev/null --request POST --url "$hook"; then
+            echo "The public site rebuild was refused." >&2
+            exit 1
           fi
