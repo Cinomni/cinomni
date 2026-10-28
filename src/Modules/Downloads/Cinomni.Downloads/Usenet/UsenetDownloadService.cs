@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using Cinomni.Discovery.Contracts;
 using Cinomni.Downloads.Application;
 using Cinomni.Downloads.Contracts;
@@ -22,7 +21,7 @@ namespace Cinomni.Downloads.Usenet;
 /// <para>
 /// A server that cannot be reached is waited out for <see cref="OutageGrace"/>, then the download
 /// fails. An article it does not have fails the download at once: repair is not built, so waiting
-/// would not bring it back. Once the download is settled, its parts are removed.
+/// would not bring it back. Once the download is settled, its working files are removed.
 /// </para>
 /// </summary>
 public sealed class UsenetDownloadService(
@@ -38,11 +37,17 @@ public sealed class UsenetDownloadService(
     public const string NoServer = "No Usenet server is configured.";
     public const string ClientName = "usenet-nzb";
     internal const string OutageMarker = ".cinomni-usenet-down";
+
+    /// <summary>
+    /// The ids of the parts stored so far, one to a line, added as each part lands. Rewriting the whole
+    /// record per part would cost writes that grow with the square of the release, and a release of
+    /// 10 GB is thousands of parts. A line is also what lets a record cut short be told from a whole one.
+    /// </summary>
+    internal const string ProgressFile = ".cinomni-usenet-done";
     private const string PartsFolder = ".parts";
 
     private static readonly TimeSpan TickBudget = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan OutageGrace = TimeSpan.FromMinutes(15);
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
     public async Task AdvanceAsync(CancellationToken cancellationToken)
@@ -87,6 +92,8 @@ public sealed class UsenetDownloadService(
             return;
         }
 
+        // Before anything below changes the task: what the history gained is what this tick adds to it.
+        var historyBefore = task.History.Count;
         Directory.CreateDirectory(task.SavePath);
         NzbDocument document;
         try
@@ -96,19 +103,19 @@ public sealed class UsenetDownloadService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "A Usenet release could not be read.");
-            await FailAsync(task, "The NZB could not be read.", cancellationToken);
+            await FailAsync(task, historyBefore, "The NZB could not be read.", cancellationToken);
             return;
         }
 
         if (NzbPolicy.Refusal(document) is { } refusal)
         {
-            await FailAsync(task, refusal, cancellationToken);
+            await FailAsync(task, historyBefore, refusal, cancellationToken);
             return;
         }
 
         if (!options.IsConfigured)
         {
-            await FailAsync(task, NoServer, cancellationToken);
+            await FailAsync(task, historyBefore, NoServer, cancellationToken);
             return;
         }
 
@@ -120,7 +127,7 @@ public sealed class UsenetDownloadService(
             .ToList();
         if (pending.Count == 0)
         {
-            await CompleteAsync(task, document, cancellationToken);
+            await CompleteAsync(task, document, historyBefore, cancellationToken);
             return;
         }
 
@@ -148,7 +155,7 @@ public sealed class UsenetDownloadService(
                 var decoded = Yenc.Decode(article);
                 await File.WriteAllBytesAsync(PartPath(task.SavePath, file.Name, segment.Number), decoded, cancellationToken);
                 done.Add(segment.MessageId);
-                await File.WriteAllTextAsync(ProgressPath(task.SavePath), JsonSerializer.Serialize(done, Json), cancellationToken);
+                await File.AppendAllTextAsync(ProgressPath(task.SavePath), segment.MessageId + "\n", cancellationToken);
                 stored++;
             }
         }
@@ -161,7 +168,7 @@ public sealed class UsenetDownloadService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "A Usenet article could not be fetched.");
-            await FailAsync(task, "The Usenet server could not supply an article.", cancellationToken);
+            await FailAsync(task, historyBefore, "The Usenet server could not supply an article.", cancellationToken);
             return;
         }
 
@@ -175,7 +182,7 @@ public sealed class UsenetDownloadService(
             if (stored == 0 && OutageOutlastedGrace(task.SavePath, DateTimeOffset.UtcNow))
             {
                 logger.LogWarning(outage, "The Usenet server has not answered for {Grace}.", OutageGrace);
-                await FailAsync(task, "The Usenet server did not answer for too long.", cancellationToken);
+                await FailAsync(task, historyBefore, "The Usenet server did not answer for too long.", cancellationToken);
                 return;
             }
 
@@ -184,11 +191,11 @@ public sealed class UsenetDownloadService(
 
         if (document.Files.Where(file => NzbPolicy.IsVideo(file.Name)).All(file => file.Segments.All(segment => done.Contains(segment.MessageId))))
         {
-            await CompleteAsync(task, document, cancellationToken);
+            await CompleteAsync(task, document, historyBefore, cancellationToken);
             return;
         }
 
-        await PersistAsync(task, events, cancellationToken);
+        await PersistAsync(task, historyBefore, events, cancellationToken);
     }
 
     private async Task<string> ReadNzbAsync(DownloadTask task, CancellationToken cancellationToken)
@@ -228,7 +235,7 @@ public sealed class UsenetDownloadService(
         return fetched.File ?? throw new InvalidOperationException("The NZB link did not return a file.");
     }
 
-    private async Task CompleteAsync(DownloadTask task, NzbDocument document, CancellationToken cancellationToken)
+    private async Task CompleteAsync(DownloadTask task, NzbDocument document, int historyBefore, CancellationToken cancellationToken)
     {
         var index = 0;
         var layout = new List<(int Index, string Path, long Size, FilePriorityLevel Priority)>();
@@ -266,16 +273,16 @@ public sealed class UsenetDownloadService(
                 task.Id, c.IntentId, c.AttemptId, task.WorkId, c.TargetId, string.Empty, task.SavePath, units, files)));
         }
 
-        await PersistAsync(task, events, cancellationToken);
+        await PersistAsync(task, historyBefore, events, cancellationToken);
         if (completed)
         {
             // Only once the row says it is done: until then a tick that is run again assembles the file
             // from these parts.
-            DiscardParts(task.SavePath);
+            DiscardScratch(task.SavePath);
         }
     }
 
-    private async Task FailAsync(DownloadTask task, string reason, CancellationToken cancellationToken)
+    private async Task FailAsync(DownloadTask task, int historyBefore, string reason, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
         if (!task.Fail(reason, now))
@@ -284,10 +291,10 @@ public sealed class UsenetDownloadService(
         }
 
         DownloadsMetrics.RecordFinished(string.Empty, CinomniTelemetry.Outcomes.Failed);
-        await PersistAsync(task, Claims(task, c => new DownloadFailed(task.Id, c.IntentId, c.AttemptId, reason)).ToList(), cancellationToken);
+        await PersistAsync(task, historyBefore, Claims(task, c => new DownloadFailed(task.Id, c.IntentId, c.AttemptId, reason)).ToList(), cancellationToken);
         // An Error task is never advanced again, and its folder is its own, so what was fetched is not
         // coming back and is as large as the release.
-        DiscardParts(task.SavePath);
+        DiscardScratch(task.SavePath);
     }
 
     /// <summary>
@@ -310,7 +317,11 @@ public sealed class UsenetDownloadService(
 
     private static void ClearOutage(string savePath) => File.Delete(Path.Combine(savePath, OutageMarker));
 
-    private void DiscardParts(string savePath)
+    /// <summary>
+    /// Removes what a download needed only while it was running: the parts, the record of which were
+    /// stored, and the outage marker. What is left beside the file is the NZB.
+    /// </summary>
+    private void DiscardScratch(string savePath)
     {
         var parts = Path.Combine(savePath, PartsFolder);
         try
@@ -319,21 +330,24 @@ public sealed class UsenetDownloadService(
             {
                 Directory.Delete(parts, recursive: true);
             }
+
+            File.Delete(ProgressPath(savePath));
+            File.Delete(Path.Combine(savePath, OutageMarker));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // The download is already settled. A folder that will not go is the operator's to remove,
             // and failing a finished download over it would be worse.
-            logger.LogWarning(ex, "The parts of a Usenet download could not be removed.");
+            logger.LogWarning(ex, "The working files of a Usenet download could not be removed.");
         }
     }
 
-    private async Task PersistAsync(DownloadTask task, IReadOnlyList<IDomainEvent> events, CancellationToken cancellationToken)
+    private async Task PersistAsync(DownloadTask task, int historyBefore, IReadOnlyList<IDomainEvent> events, CancellationToken cancellationToken)
     {
-        var historyBefore = task.History.Count;
+        var newHistory = task.History.Skip(historyBefore).ToList();
         await unitOfWork.ExecuteAsync(async token =>
         {
-            dbContext.History.AddRange(task.History.Skip(historyBefore));
+            dbContext.History.AddRange(newHistory);
             await dbContext.SaveChangesAsync(token);
             foreach (var domainEvent in events)
             {
@@ -360,11 +374,14 @@ public sealed class UsenetDownloadService(
             return new HashSet<string>(StringComparer.Ordinal);
         }
 
-        var ids = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path)) ?? [];
-        return ids.ToHashSet(StringComparer.Ordinal);
+        // Whatever follows the last line end is a record that was being written when the process stopped.
+        // It is an id nobody confirmed the part for, even when it is a whole one, so it is not trusted:
+        // the part is fetched again.
+        var lines = File.ReadAllText(path).Split('\n');
+        return lines[..^1].ToHashSet(StringComparer.Ordinal);
     }
 
-    private static string ProgressPath(string savePath) => Path.Combine(savePath, ".cinomni-usenet.json");
+    private static string ProgressPath(string savePath) => Path.Combine(savePath, ProgressFile);
 
     private static string PartPath(string savePath, string name, int number)
     {

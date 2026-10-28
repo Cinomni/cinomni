@@ -41,7 +41,7 @@ public sealed class UsenetDownloadServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_finished_download_is_one_file_and_keeps_no_parts()
+    public async Task A_finished_download_leaves_the_file_and_its_nzb_and_nothing_else()
     {
         var first = AllByteValues();
         var second = "the rest of the film"u8.ToArray();
@@ -52,8 +52,48 @@ public sealed class UsenetDownloadServiceTests : IAsyncLifetime
         Assert.Equal(DownloadState.Completed, (await GetTaskAsync(download.AttemptId)).State);
         byte[] film = [.. first, .. second];
         Assert.Equal(film, await File.ReadAllBytesAsync(Path.Combine(download.Folder, "Film.mkv")));
-        // The parts are as large as the film. Left behind they double what the download takes on disk.
-        Assert.False(Directory.Exists(Path.Combine(download.Folder, ".parts")));
+        // The parts are as large as the film. Left behind they double what the download takes on disk,
+        // and the progress record and outage marker are no use to a download that is over.
+        Assert.Equal(["Film.mkv", "release.nzb"], EntriesOf(download));
+    }
+
+    [Fact]
+    public async Task A_completed_download_records_its_start_and_its_end_in_the_history()
+    {
+        var download = await ArrangeAsync("only part"u8.ToArray());
+
+        await TickAsync();
+
+        var history = (await GetTaskAsync(download.AttemptId)).History;
+        Assert.Single(history, entry => entry.Trigger == "Downloading");
+        Assert.Single(history, entry => entry.Trigger == "Completed");
+    }
+
+    [Fact]
+    public async Task A_failed_download_records_why_in_the_history()
+    {
+        var download = await ArrangeAsync("only part"u8.ToArray(), missing: [1]);
+
+        await TickAsync();
+
+        var history = (await GetTaskAsync(download.AttemptId)).History;
+        Assert.Equal("The Usenet server could not supply an article.", Assert.Single(history, entry => entry.Trigger == "Failed").Note);
+    }
+
+    [Fact]
+    public async Task A_torn_last_line_in_the_progress_record_is_ignored()
+    {
+        _server.Behavior = connection => connection == 0 ? ConnectionBehavior.ServeOneThenDrop : ConnectionBehavior.Serve;
+        var download = await ArrangeAsync("first part"u8.ToArray(), "second part"u8.ToArray());
+        await TickAsync();
+
+        // A crash while the record was being written leaves the last id without its line end. That id is
+        // a whole one, and the part it names was never confirmed, so it is fetched again rather than trusted.
+        await File.AppendAllTextAsync(Path.Combine(download.Folder, UsenetDownloadService.ProgressFile), "s2@example");
+        await TickAsync();
+
+        Assert.Equal(DownloadState.Completed, (await GetTaskAsync(download.AttemptId)).State);
+        Assert.Equal(2, _server.Connections);
     }
 
     [Fact]
@@ -137,14 +177,14 @@ public sealed class UsenetDownloadServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_failed_download_does_not_keep_its_parts()
+    public async Task A_failed_download_leaves_its_nzb_and_nothing_else()
     {
         var download = await ArrangeAsync("first part"u8.ToArray(), "second part"u8.ToArray(), missing: [2]);
 
         await TickAsync();
 
         Assert.Equal(DownloadState.Error, (await GetTaskAsync(download.AttemptId)).State);
-        Assert.False(Directory.Exists(Path.Combine(download.Folder, ".parts")));
+        Assert.Equal(["release.nzb"], EntriesOf(download));
     }
 
     private sealed record Arranged(Guid AttemptId, string Folder);
@@ -194,6 +234,10 @@ public sealed class UsenetDownloadServiceTests : IAsyncLifetime
         await using var scope = _provider.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<UsenetDownloadService>().AdvanceAsync(CancellationToken.None);
     }
+
+    /// <summary>What is in the download's folder, hidden files included, by name.</summary>
+    private static string[] EntriesOf(Arranged download) =>
+        [.. Directory.GetFileSystemEntries(download.Folder).Select(entry => Path.GetFileName(entry)).Order(StringComparer.Ordinal)];
 
     private static string OutageMarker(Arranged download) => Path.Combine(download.Folder, UsenetDownloadService.OutageMarker);
 
