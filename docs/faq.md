@@ -20,7 +20,9 @@ can only reach the internet through the tunnel and stops when it drops. See
 
 ### Does it support Usenet?
 
-No. Newznab indexers can be added, but only torrent releases can be downloaded.
+A Newznab release whose NZB is already a video file, yes, once `Downloads__Usenet__Host` names a
+server. Packed releases (rar, par2) are refused: unpacking and repair are not built. Usenet does not
+use the torrent VPN. See [Downloads](administration/downloads.md#usenet).
 
 ### Are there apps for phones or TVs?
 

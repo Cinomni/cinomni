@@ -63,5 +63,5 @@ See [Users and access](../administration/users-and-access.md).
 ## What it does not do (yet)
 
 Cinomni is scoped to movies and series on a single Linux amd64 machine. There is no music, books or
-photos, no Usenet download client, no native mobile or TV apps, no compatibility with third-party
+photos, no Usenet repair or unpacking, no native mobile or TV apps, no compatibility with third-party
 media-server clients, and no multi-server setup. [ROADMAP.md](../../ROADMAP.md) lists what is next.

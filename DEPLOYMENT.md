@@ -1516,7 +1516,7 @@ Deliberately, and matching the MVP scope in [ROADMAP.md](./ROADMAP.md):
   guaranteed to provide for every codec. When it does not, the source decodes in software and feeds
   an otherwise-accelerated encode, and the plan says so (`PlaybackPlan.DecodeAccelerated`) rather than
   leaving it to be inferred. Direct Play and Remux never decode or encode at all.
-- **No Usenet**, no multi-node or high availability, no Kubernetes, no native mobile or TV apps.
+- **No Usenet repair or unpacking**, no multi-node or high availability, no Kubernetes, no native mobile or TV apps. A video-file NZB can be downloaded when `Downloads__Usenet__Host` is set; see docs/administration/downloads.md.
 - **No supported Windows deployment.** Running the Host natively on Windows to reach a GPU is
   described in section 9 and is meant for playback only; it is outside the MVP, not verified in CI, and
   the torrent sidecar and the VPN overlay remain Linux-only.

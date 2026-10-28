@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using Cinomni.Downloads.Contracts;
+using Cinomni.Downloads.Usenet;
 using Cinomni.Kernel.Identifiers;
 
 namespace Cinomni.Downloads.Persistence;
@@ -40,8 +41,11 @@ public sealed class DownloadTask
 
     public required string ReleaseGuid { get; init; }
 
-    /// <summary>The indexer reference to fetch: a magnet URI or an http(s) link to a .torrent.</summary>
+    /// <summary>The indexer reference to fetch: a magnet URI, a .torrent link, or an NZB link.</summary>
     public required string DownloadUrl { get; init; }
+
+    /// <summary><c>Torrent</c> or <c>Usenet</c>. Existing rows are torrents.</summary>
+    public string Protocol { get; private set; } = DownloadProtocols.Torrent;
 
     /// <summary>Staging area the sidecar writes into (Import lands files from here).</summary>
     public required string SavePath { get; init; }
@@ -146,7 +150,8 @@ public sealed class DownloadTask
         string savePath,
         SeedingPolicy policy,
         DateTimeOffset now,
-        IReadOnlyList<Guid>? unitIds = null)
+        IReadOnlyList<Guid>? unitIds = null,
+        string protocol = DownloadProtocols.Torrent)
     {
         var task = new DownloadTask
         {
@@ -157,6 +162,7 @@ public sealed class DownloadTask
             TargetId = targetId,
             ReleaseGuid = Text.Truncate(releaseGuid, UrlMaxLength)!,
             DownloadUrl = Text.Truncate(downloadUrl, UrlMaxLength)!,
+            Protocol = protocol,
             SavePath = Text.Truncate(savePath, PathMaxLength)!,
             State = DownloadState.Queued,
             SeedingPolicyJson = policy.ToJson(),
