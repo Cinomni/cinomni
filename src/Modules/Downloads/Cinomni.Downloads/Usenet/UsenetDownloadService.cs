@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Cinomni.Discovery.Contracts;
 using Cinomni.Downloads.Application;
@@ -18,6 +19,11 @@ namespace Cinomni.Downloads.Usenet;
 /// Advances one Usenet download a short way, then returns. The torrent engine is never asked.
 /// A packed NZB is refused before any article is fetched. Progress is the parts already on disk,
 /// so a tick that is run again does not fetch them twice.
+/// <para>
+/// A server that cannot be reached is waited out for <see cref="OutageGrace"/>, then the download
+/// fails. An article it does not have fails the download at once: repair is not built, so waiting
+/// would not bring it back. Once the download is settled, its parts are removed.
+/// </para>
 /// </summary>
 public sealed class UsenetDownloadService(
     DownloadsDbContext dbContext,
@@ -31,8 +37,11 @@ public sealed class UsenetDownloadService(
     public const string Protocol = "Usenet";
     public const string NoServer = "No Usenet server is configured.";
     public const string ClientName = "usenet-nzb";
+    internal const string OutageMarker = ".cinomni-usenet-down";
+    private const string PartsFolder = ".parts";
 
     private static readonly TimeSpan TickBudget = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan OutageGrace = TimeSpan.FromMinutes(15);
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
@@ -122,6 +131,8 @@ public sealed class UsenetDownloadService(
             events.AddRange(Claims(task, c => new DownloadStarted(task.Id, c.IntentId, c.AttemptId, string.Empty)));
         }
 
+        var stored = 0;
+        NntpUnavailableException? outage = null;
         try
         {
             await using var client = await NntpClient.ConnectAsync(options, cancellationToken);
@@ -138,13 +149,37 @@ public sealed class UsenetDownloadService(
                 await File.WriteAllBytesAsync(PartPath(task.SavePath, file.Name, segment.Number), decoded, cancellationToken);
                 done.Add(segment.MessageId);
                 await File.WriteAllTextAsync(ProgressPath(task.SavePath), JsonSerializer.Serialize(done, Json), cancellationToken);
+                stored++;
             }
+        }
+        catch (NntpUnavailableException ex)
+        {
+            // The server's bad minute, not an answer about this release. The next tick starts again from
+            // the parts on disk.
+            outage = ex;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "A Usenet article could not be fetched.");
             await FailAsync(task, "The Usenet server could not supply an article.", cancellationToken);
             return;
+        }
+
+        if (stored > 0)
+        {
+            ClearOutage(task.SavePath);
+        }
+
+        if (outage is not null)
+        {
+            if (stored == 0 && OutageOutlastedGrace(task.SavePath, DateTimeOffset.UtcNow))
+            {
+                logger.LogWarning(outage, "The Usenet server has not answered for {Grace}.", OutageGrace);
+                await FailAsync(task, "The Usenet server did not answer for too long.", cancellationToken);
+                return;
+            }
+
+            logger.LogWarning("The Usenet server could not be reached ({Reason}); the download will try again.", outage.Message);
         }
 
         if (document.Files.Where(file => NzbPolicy.IsVideo(file.Name)).All(file => file.Segments.All(segment => done.Contains(segment.MessageId))))
@@ -221,7 +256,8 @@ public sealed class UsenetDownloadService(
             events.AddRange(Claims(task, c => new DownloadStarted(task.Id, c.IntentId, c.AttemptId, string.Empty)));
         }
 
-        if (task.MarkCompleted(task.SavePath, now))
+        var completed = task.MarkCompleted(task.SavePath, now);
+        if (completed)
         {
             DownloadsMetrics.RecordFinished(string.Empty, CinomniTelemetry.Outcomes.Completed);
             var units = task.Units.Count > 0 ? task.Units.Select(u => u.UnitId).ToList() : new List<Guid> { task.WorkId };
@@ -231,6 +267,12 @@ public sealed class UsenetDownloadService(
         }
 
         await PersistAsync(task, events, cancellationToken);
+        if (completed)
+        {
+            // Only once the row says it is done: until then a tick that is run again assembles the file
+            // from these parts.
+            DiscardParts(task.SavePath);
+        }
     }
 
     private async Task FailAsync(DownloadTask task, string reason, CancellationToken cancellationToken)
@@ -243,6 +285,47 @@ public sealed class UsenetDownloadService(
 
         DownloadsMetrics.RecordFinished(string.Empty, CinomniTelemetry.Outcomes.Failed);
         await PersistAsync(task, Claims(task, c => new DownloadFailed(task.Id, c.IntentId, c.AttemptId, reason)).ToList(), cancellationToken);
+        // An Error task is never advanced again, and its folder is its own, so what was fetched is not
+        // coming back and is as large as the release.
+        DiscardParts(task.SavePath);
+    }
+
+    /// <summary>
+    /// A server that answers nothing is waited out, but not for ever: the first tick that stored no
+    /// article writes the time down, and one that finds it older than <see cref="OutageGrace"/> says so.
+    /// Failing frees the acquisition to look for another release.
+    /// </summary>
+    private static bool OutageOutlastedGrace(string savePath, DateTimeOffset now)
+    {
+        var path = Path.Combine(savePath, OutageMarker);
+        if (File.Exists(path)
+            && DateTimeOffset.TryParse(File.ReadAllText(path), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var since))
+        {
+            return now - since > OutageGrace;
+        }
+
+        File.WriteAllText(path, now.ToString("O", CultureInfo.InvariantCulture));
+        return false;
+    }
+
+    private static void ClearOutage(string savePath) => File.Delete(Path.Combine(savePath, OutageMarker));
+
+    private void DiscardParts(string savePath)
+    {
+        var parts = Path.Combine(savePath, PartsFolder);
+        try
+        {
+            if (Directory.Exists(parts))
+            {
+                Directory.Delete(parts, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The download is already settled. A folder that will not go is the operator's to remove,
+            // and failing a finished download over it would be worse.
+            logger.LogWarning(ex, "The parts of a Usenet download could not be removed.");
+        }
     }
 
     private async Task PersistAsync(DownloadTask task, IReadOnlyList<IDomainEvent> events, CancellationToken cancellationToken)
@@ -285,8 +368,8 @@ public sealed class UsenetDownloadService(
 
     private static string PartPath(string savePath, string name, int number)
     {
-        var dir = Path.Combine(savePath, ".parts", name);
+        var dir = Path.Combine(savePath, PartsFolder, name);
         Directory.CreateDirectory(dir);
-        return Path.Combine(dir, number.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return Path.Combine(dir, number.ToString(CultureInfo.InvariantCulture));
     }
 }

@@ -51,6 +51,12 @@ Usenet leaves over this machine's own connection. It does not use the torrent tu
 hold does not stop it. A packed release (rar or par2) is refused and not downloaded: unpacking and
 repair are not built.
 
+A server that does not answer, or drops the connection, does not fail the download: it is tried again
+and carries on from the articles already fetched. If the server has stayed silent for 15 minutes, the
+download fails and the goal looks for another release. An article the server does not have fails it
+at once, because repair is not built and waiting would not bring the article back. The articles are
+kept in the download's folder until it finishes or fails, and are then removed.
+
 ## Egress: direct or through a VPN
 
 `CINOMNI_TORRENT_EGRESS` in `.env` records your choice, and has no default on purpose.
