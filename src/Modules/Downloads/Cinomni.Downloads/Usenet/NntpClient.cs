@@ -17,7 +17,9 @@ internal sealed class NntpClient : IAsyncDisposable
     private NntpClient(Stream stream)
     {
         this.stream = stream;
-        reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+        // An article is bytes, not text, and yEnc uses all 256 values. Latin1 is the view that keeps one
+        // character per byte; ASCII would turn every byte above 127 into '?' and keep the length.
+        reader = new StreamReader(stream, Encoding.Latin1, detectEncodingFromByteOrderMarks: false, bufferSize: -1, leaveOpen: true);
         writer = new StreamWriter(stream, Encoding.ASCII, leaveOpen: true) { NewLine = "\r\n", AutoFlush = true };
     }
 
