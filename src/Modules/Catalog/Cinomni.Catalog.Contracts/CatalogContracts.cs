@@ -84,7 +84,10 @@ public sealed record ExternalId(MetadataProvider Provider, string Value);
 /// <see cref="Overview"/>, <see cref="RuntimeMinutes"/> and <see cref="Genres"/> are the descriptive
 /// fields copied from the applied metadata snapshot, so a viewer who may not read the snapshot itself
 /// still learns what a title is. All three are trailing optionals: null (or empty) means the provider
-/// has not said, never that the work has none.
+/// has not said, never that the work has none. <see cref="CollectionPinned"/> is true when an
+/// administrator placed the work by hand; rules leave it alone until the pin is released. It is a
+/// trailing default so a caller that forgets it still compiles — which is why the HTTP test reads it
+/// off the response, not off a summary built by hand.
 /// </para>
 /// </summary>
 public sealed record WorkSummary(
@@ -104,7 +107,8 @@ public sealed record WorkSummary(
     string? Overview = null,
     int? RuntimeMinutes = null,
     IReadOnlyList<string>? Genres = null,
-    bool AwaitingMetadata = false);
+    bool AwaitingMetadata = false,
+    bool CollectionPinned = false);
 
 /// <summary>
 /// One page of works, with <see cref="Total"/> counting every work the viewer may see under the same filter —
@@ -140,7 +144,8 @@ public enum WorkSort
 /// <summary>
 /// The filters of the paged catalog list, all optional and combined with AND. They narrow what the viewer
 /// may already see; none of them widens it. <see cref="Term"/> matches anywhere in the title, ignoring
-/// case; <see cref="Genre"/> matches a provider genre label exactly.
+/// case; <see cref="Genre"/> matches a provider genre label exactly. <see cref="Pinned"/>, when set,
+/// keeps only works placed by hand, or only works the rules may still move; absent does not filter.
 /// </summary>
 public sealed record WorkListQuery(
     CollectionId? Collection = null,
@@ -148,7 +153,8 @@ public sealed record WorkListQuery(
     string? Term = null,
     WorkAvailability? Availability = null,
     string? Genre = null,
-    WorkSort Sort = WorkSort.Title);
+    WorkSort Sort = WorkSort.Title,
+    bool? Pinned = null);
 
 /// <summary>How many visible works carry one genre.</summary>
 public sealed record GenreCount(string Genre, int Count);

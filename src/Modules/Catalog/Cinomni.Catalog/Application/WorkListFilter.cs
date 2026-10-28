@@ -35,6 +35,11 @@ internal static class WorkListFilter
             works = works.Where(w => w.Genres.Contains(query.Genre));
         }
 
+        if (query.Pinned is { } pinned)
+        {
+            works = works.Where(w => w.CollectionPinned == pinned);
+        }
+
         return query.Availability switch
         {
             // The same rule the rollups are rendered with: a movie, or a series with no episodes counted
