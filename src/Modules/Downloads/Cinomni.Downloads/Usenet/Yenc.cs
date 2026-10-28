@@ -1,14 +1,21 @@
-using System.Text;
+using System.Globalization;
 
 namespace Cinomni.Downloads.Usenet;
 
 /// <summary>
-/// Decodes one yEnc article body. The article is hostile input: a body that is not yEnc, or whose
-/// decoded size is not the size the part header states, is a failure rather than a file with a hole.
+/// Decodes one yEnc article body. The article is hostile input: a body that is not yEnc, whose
+/// decoded size is not the size the part header states, or whose bytes do not match the checksum
+/// the trailer states, is a failure rather than a file with a hole or a flipped byte.
+/// <para>
+/// The article is a string with one character per byte (Latin1), not text. yEnc uses all 256 byte
+/// values, so reading it as ASCII or UTF-8 would corrupt it without changing its length.
+/// </para>
 /// </summary>
 internal static class Yenc
 {
     public const int MaxDecodedBytes = 8 * 1024 * 1024;
+
+    private static readonly uint[] CrcTable = BuildCrcTable();
 
     public static byte[] Decode(string article)
     {
@@ -41,7 +48,54 @@ internal static class Yenc
             throw new InvalidOperationException("A yEnc part did not have the size its header stated.");
         }
 
-        return output.ToArray();
+        var decoded = output.ToArray();
+        if (StatedCrc(lines, begin, end) is { } stated && stated != Crc32(decoded))
+        {
+            throw new InvalidOperationException("A yEnc part did not match the checksum its trailer stated.");
+        }
+
+        return decoded;
+    }
+
+    /// <summary>
+    /// The checksum of this part's bytes, when the trailer states one; some posters leave it out. A
+    /// multi-part trailer carries <c>pcrc32</c> for the part and, on the last part, <c>crc32</c> for
+    /// the whole file, which says nothing about this part. A single-part article carries only <c>crc32</c>.
+    /// </summary>
+    private static uint? StatedCrc(string[] lines, int begin, int end)
+    {
+        var hasPart = Array.FindIndex(
+            lines, begin + 1, end - begin - 1, line => line.StartsWith("=ypart ", StringComparison.Ordinal)) >= 0;
+        var field = Value(lines[end], "pcrc32") ?? (hasPart ? null : Value(lines[end], "crc32"));
+        return uint.TryParse(field, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var crc) ? crc : null;
+    }
+
+    private static uint Crc32(byte[] data)
+    {
+        var crc = 0xFFFFFFFFu;
+        foreach (var value in data)
+        {
+            crc = CrcTable[(crc ^ value) & 0xFF] ^ (crc >> 8);
+        }
+
+        return ~crc;
+    }
+
+    private static uint[] BuildCrcTable()
+    {
+        var table = new uint[256];
+        for (uint n = 0; n < table.Length; n++)
+        {
+            var value = n;
+            for (var bit = 0; bit < 8; bit++)
+            {
+                value = (value & 1) != 0 ? (value >> 1) ^ 0xEDB88320u : value >> 1;
+            }
+
+            table[n] = value;
+        }
+
+        return table;
     }
 
     /// <summary>
@@ -68,9 +122,10 @@ internal static class Yenc
         return int.TryParse(Value(lines[begin], "size"), out var size) && size >= 0 ? size : null;
     }
 
+    /// <summary>The value of a header field. The name is matched whole: <c>crc32</c> is not the end of <c>pcrc32</c>.</summary>
     private static string? Value(string header, string name)
     {
-        var token = name + "=";
+        var token = " " + name + "=";
         var at = header.IndexOf(token, StringComparison.Ordinal);
         if (at < 0)
         {
@@ -84,21 +139,24 @@ internal static class Yenc
 
     private static void DecodeLine(string line, Stream output)
     {
-        var bytes = Encoding.ASCII.GetBytes(line);
-        for (var i = 0; i < bytes.Length; i++)
+        for (var i = 0; i < line.Length; i++)
         {
-            var value = bytes[i];
+            var value = AsByte(line[i]);
             if (value == (byte)'=')
             {
-                if (i + 1 >= bytes.Length)
+                if (i + 1 >= line.Length)
                 {
                     throw new InvalidOperationException("A yEnc escape was cut off.");
                 }
 
-                value = (byte)(bytes[++i] - 64);
+                value = (byte)(AsByte(line[++i]) - 64);
             }
 
             output.WriteByte((byte)(value - 42));
         }
     }
+
+    /// <summary>A character above 0xFF means the article was read as text, and would be corrupt.</summary>
+    private static byte AsByte(char value) =>
+        value <= 0xFF ? (byte)value : throw new InvalidOperationException("An article was not read as bytes.");
 }
