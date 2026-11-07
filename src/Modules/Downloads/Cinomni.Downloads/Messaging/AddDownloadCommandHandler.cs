@@ -32,6 +32,7 @@ public sealed class AddDownloadCommandHandler(DownloadService service, ICommandQ
                 command.ReleaseGuid,
                 command.DownloadUrl,
                 command.UnitIds,
+                command.Protocol,
                 cancellationToken);
         }
         catch (NetworkHoldException)

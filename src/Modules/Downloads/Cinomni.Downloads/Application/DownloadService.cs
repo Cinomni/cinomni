@@ -4,6 +4,7 @@ using Cinomni.Downloads.Contracts;
 using Cinomni.Downloads.Diagnostics;
 using Cinomni.Downloads.Engine;
 using Cinomni.Downloads.Persistence;
+using Cinomni.Downloads.Usenet;
 using Cinomni.Kernel.Diagnostics;
 using Cinomni.Kernel.Messaging;
 using Cinomni.Operations.Messaging;
@@ -77,6 +78,7 @@ public sealed class DownloadService(
         string releaseGuid,
         string downloadUrl,
         IReadOnlyList<Guid>? unitIds = null,
+        string? protocol = null,
         CancellationToken cancellationToken = default)
     {
         // Claims are the dedup key; the task's own attempt_id is checked too so a task written before
@@ -85,6 +87,13 @@ public sealed class DownloadService(
             || await dbContext.Tasks.AnyAsync(t => t.AttemptId == attemptId, cancellationToken))
         {
             return; // this attempt is already waiting on a download
+        }
+
+        if (DownloadProtocols.IsUsenet(protocol))
+        {
+            await EnqueueUsenetAsync(
+                attemptId, intentId, workId, targetId, releaseGuid, downloadUrl, unitIds, cancellationToken);
+            return;
         }
 
         // Nothing new is handed to an engine whose traffic is not going where it should. The refusal is
@@ -149,6 +158,32 @@ public sealed class DownloadService(
             {
                 await eventBus.PublishAsync(new MetadataReady(task.Id, added.InfoHash, task.Name), token);
             }
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Records a Usenet release without handing it to the torrent engine. The scheduled advance picks
+    /// it up. A tunnel hold does not apply: Usenet does not leave through the torrent tunnel.
+    /// </summary>
+    private async Task EnqueueUsenetAsync(
+        Guid attemptId,
+        Guid intentId,
+        Guid workId,
+        Guid targetId,
+        string releaseGuid,
+        string downloadUrl,
+        IReadOnlyList<Guid>? unitIds,
+        CancellationToken cancellationToken)
+    {
+        var savePath = $"{options.StagingPath.TrimEnd('/')}/{attemptId}";
+        var now = DateTimeOffset.UtcNow;
+        var task = DownloadTask.Create(
+            intentId, attemptId, workId, targetId, releaseGuid, downloadUrl, savePath, transfers.DefaultSeedingPolicy, now,
+            unitIds, DownloadProtocols.Usenet);
+        await unitOfWork.ExecuteAsync(async token =>
+        {
+            dbContext.Tasks.Add(task);
+            await dbContext.SaveChangesAsync(token);
         }, cancellationToken);
     }
 
@@ -495,17 +530,35 @@ public sealed class DownloadService(
             .Include(t => t.Claims)
             .AsSplitQuery()
             .FirstOrDefaultAsync(t => t.Id == id.Value, cancellationToken);
-        if (task?.InfoHash is not { } infoHash)
+        if (task is null)
         {
             return false;
         }
 
-        await engine.RemoveAsync(infoHash, deleteFiles, cancellationToken);
+        var infoHash = task.InfoHash;
+        if (DownloadProtocols.IsUsenet(task.Protocol))
+        {
+            if (deleteFiles && Directory.Exists(task.SavePath))
+            {
+                Directory.Delete(task.SavePath, recursive: true);
+            }
+        }
+        else if (infoHash is null)
+        {
+            return false;
+        }
+        else
+        {
+            await engine.RemoveAsync(infoHash, deleteFiles, cancellationToken);
+        }
 
-        // No further status snapshot will arrive for this torrent, so the in-flight view has to be told.
-        // Left in, it would hold the active count up and keep adding its last transfer rate to the
-        // aggregate for the life of the process — a gauge that never comes back down.
-        DownloadsMetrics.Forget(infoHash);
+        if (infoHash is not null)
+        {
+            // No further status snapshot will arrive for this torrent, so the in-flight view has to be told.
+            // Left in, it would hold the active count up and keep adding its last transfer rate to the
+            // aggregate for the life of the process — a gauge that never comes back down.
+            DownloadsMetrics.Forget(infoHash);
+        }
 
         // A task removed before it finished is a failed download to every goal waiting on it. Nothing
         // else will ever report on it — no snapshot streams for a torrent the engine dropped — so
@@ -710,6 +763,12 @@ public sealed class DownloadService(
         if (task is null || !RecoverableStates.Contains(task.State) || task.IsNetworkHeld)
         {
             return false; // moved on while we were working through the list
+        }
+
+        // A Usenet task is not a torrent. Handing its NZB link to the engine would fetch it as one.
+        if (DownloadProtocols.IsUsenet(task.Protocol))
+        {
+            return false;
         }
 
         TorrentAdded added;

@@ -82,7 +82,7 @@ criteria are met.
 | **Library** | Browse movies and series with artwork, genres and a regional age rating; group titles into collections, by hand from the console or by rules you preview first; limit what an account sees |
 | **Finding releases** | Use Torznab/Newznab indexers or declarative definitions, from catalog sources you subscribe to or written by hand, including private trackers that sign in and sit behind a challenge |
 | **Decisions** | See why every release was taken or refused; set quality profiles and a cutoff; search by hand and override deliberately |
-| **Downloads** | Download with the built-in libtorrent sidecar, optionally only through a VPN that fails closed; resume after any restart |
+| **Downloads** | Download with the built-in libtorrent sidecar, optionally only through a VPN that fails closed; resume after any restart; download a Usenet release that is already a video file over NNTP |
 | **Import** | Hardlink or copy, rename, land season packs, upgrade and recycle the old file, repair names already on disk |
 | **Subtitles** | Fetch wanted languages from two providers, check each download against the audio and re-time it, and show them in the player, or burn picture subtitles in |
 | **Playback** | Play in the browser with Direct Play, remux or HLS; choose audio, subtitles, quality and speed; resume where you left off |
@@ -94,10 +94,10 @@ criteria are met.
 
 | Next (likely candidates) | Later (deliberately deferred) | Out of scope for now |
 |---|---|---|
-| **Usenet**: scope reopened; the indexer model already speaks Newznab | Python subtitle worker (many providers, sync, mods) | Music, books, comics, images |
-| **The two hardware drills**: a real VPN drop, a real GPU | WebSocket / remote control across sessions | Jellyfin-compatible client API |
+| **The two hardware drills**: a real VPN drop, a real GPU | Python subtitle worker (many providers, sync, mods) | Music, books, comics, images |
+| | WebSocket / remote control across sessions | Jellyfin-compatible client API |
 | | High availability, multi-server | Native mobile and TV apps |
-| | | Kubernetes, plugins, federation |
+| | Usenet repair and unpacking (par2, rar) | Kubernetes, plugins, federation |
 | | | Native Windows/macOS as a *supported* deployment |
 
 A per-account
@@ -123,8 +123,9 @@ reads the project as proving more than it does.
   per-library access · requests · Docker on Linux amd64 · jobs, health, backup, outbox, recovery · VPN
   with kill-switch.
 - **Opt-in additions since the MVP** (an installation that uses none of them behaves as before):
-  declarative indexers, hardware acceleration, two-factor sign-in, a content ceiling, HEVC output, and
-  a native Windows host for GPU transcoding (documented, not a supported deployment).
+  declarative indexers, hardware acceleration, two-factor sign-in, a content ceiling, HEVC output,
+  Usenet for an NZB that is already a video file, and a native Windows host for GPU transcoding
+  (documented, not a supported deployment).
 
 ## Definition of done
 
@@ -882,6 +883,33 @@ host.
 </details>
 
 <details>
+<summary><b>Usenet, for a video file only (post-MVP)</b></summary>
+
+Opt-in: with `Downloads__Usenet__Host` empty, an installation behaves as before, except that a
+Newznab release now fails with that reason instead of being handed to the torrent engine, which could
+never have downloaded it. With a server set, Downloads fetches the NZB and downloads its articles over
+NNTP into the staging folder, where Import picks the file up as it does a finished torrent.
+
+- **Only a release that is already a video file.** A packed release (rar or par2 in the NZB) is
+  refused before a single article is fetched. Unpacking and repair are not built, and Import does not
+  accept an archive, so fetching it would only fill the disk with something nothing can use.
+- **Every part is checked.** A yEnc part keeps every byte it carries and its CRC is verified; a reply
+  larger than a part may be is refused rather than buffered.
+- **An outage is waited out, a missing article is not.** No call to the server can wait for ever. A
+  server that stops answering or drops the connection is tried again from the articles already
+  fetched; only once it has stayed silent for 15 minutes does the download fail and the goal look for
+  another release. An
+  article the server does not have fails the download at once: without repair, waiting would not
+  bring it back.
+- **Its own connection, not the tunnel.** Usenet leaves over the machine's own network and a tunnel
+  hold does not stop it; the kill-switch is a torrent guarantee. The password stays in configuration
+  and is not logged.
+- **What it has not had** is a run against a real provider: the NNTP client, the yEnc decoder and the
+  outage handling are covered by tests against an in-process server.
+
+</details>
+
+<details>
 <summary><b>Accepted risks in detail</b></summary>
 
 All seven M4 areas have landed, and the suite and the deployment have been confirmed on linux/amd64.
@@ -936,7 +964,7 @@ monitoring; relational library; Direct Play / Remux / basic HLS; explainable pla
 per-user progress; basic external subtitles; local users with per-library access; basic requests;
 Docker Linux amd64; jobs/health/backup/outbox/recovery; layered VPN with kill-switch.
 
-**Out (for now):** music/books/comics/images; file manager and uploads; Usenet; advanced subtitles;
+**Out (for now):** music/books/comics/images; file manager and uploads; Usenet repair and unpacking; advanced subtitles;
 full scene mapping; Jellyfin client-API compatibility; native mobile/TV apps; WebSocket remote
 control; rule-based collections; high availability, Kubernetes,
 multi-server; native Windows/macOS; third-party plugins and federation.
