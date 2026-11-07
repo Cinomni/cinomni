@@ -187,6 +187,20 @@ public sealed class UsenetDownloadServiceTests : IAsyncLifetime
         Assert.Equal(["release.nzb"], EntriesOf(download));
     }
 
+    [Fact]
+    public async Task A_packed_release_fails_without_a_connection_to_the_server()
+    {
+        // The articles are on the server, so only the refusal can stop this download.
+        var download = await ArrangeAsync("only part"u8.ToArray(), file: "Film.part01.rar");
+
+        await TickAsync();
+
+        var task = await GetTaskAsync(download.AttemptId);
+        Assert.Equal(DownloadState.Error, task.State);
+        Assert.Equal(NzbPolicy.Packed, task.LastError);
+        Assert.Equal(0, _server.Connections);
+    }
+
     private sealed record Arranged(Guid AttemptId, string Folder);
 
     /// <summary>
@@ -194,7 +208,7 @@ public sealed class UsenetDownloadServiceTests : IAsyncLifetime
     /// release's NZB is already in the task's folder, as it is after the first tick, so the test does not
     /// need an indexer. Segments numbered in <paramref name="missing"/> are in the NZB but not on the server.
     /// </summary>
-    private async Task<Arranged> ArrangeAsync(byte[] first, byte[]? second = null, int[]? missing = null)
+    private async Task<Arranged> ArrangeAsync(byte[] first, byte[]? second = null, int[]? missing = null, string file = "Film.mkv")
     {
         byte[][] parts = second is null ? [first] : [first, second];
         var segments = new StringBuilder();
@@ -225,7 +239,7 @@ public sealed class UsenetDownloadServiceTests : IAsyncLifetime
         Directory.CreateDirectory(folder);
         await File.WriteAllTextAsync(
             Path.Combine(folder, "release.nzb"),
-            $"<nzb><file subject=\"&quot;Film.mkv&quot; yEnc (1/{parts.Length})\"><segments>{segments}</segments></file></nzb>");
+            $"<nzb><file subject=\"&quot;{file}&quot; yEnc (1/{parts.Length})\"><segments>{segments}</segments></file></nzb>");
         return new Arranged(attemptId, folder);
     }
 
