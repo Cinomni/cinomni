@@ -1,6 +1,7 @@
 using Cinomni.Downloads.Contracts;
 using Cinomni.Downloads.Engine;
 using Cinomni.Downloads.Persistence;
+using Cinomni.Downloads.Usenet;
 
 namespace Cinomni.Downloads.Tests;
 
@@ -20,7 +21,7 @@ public sealed class TunnelHoldFsmTests
 
     private const string Reason = "default-route-not-via-tunnel";
 
-    private static DownloadTask NewTask() =>
+    private static DownloadTask NewTask(string protocol = DownloadProtocols.Torrent) =>
         DownloadTask.Create(
             intentId: Guid.NewGuid(),
             attemptId: Guid.NewGuid(),
@@ -30,7 +31,8 @@ public sealed class TunnelHoldFsmTests
             downloadUrl: "magnet:?xt=urn:btih:abc",
             savePath: "/data/staging",
             policy: SeedingPolicy.Unbounded,
-            now: Now);
+            now: Now,
+            protocol: protocol);
 
     private static DownloadTask Downloading()
     {
@@ -97,6 +99,29 @@ public sealed class TunnelHoldFsmTests
 
         Assert.True(task.HoldForNetwork(Reason, Now));
         Assert.Equal(DownloadState.Paused, task.State);
+    }
+
+    [Theory]
+    [InlineData(DownloadState.Queued)]
+    [InlineData(DownloadState.Downloading)]
+    public void A_usenet_download_is_never_held_because_it_does_not_leave_through_the_tunnel(DownloadState from)
+    {
+        // The guard exists for torrent traffic. A hold would pause a task the Usenet downloader then
+        // stops advancing, so an outage of a tunnel it never uses would still stall it.
+        var task = NewTask(DownloadProtocols.Usenet);
+        if (from is DownloadState.Downloading)
+        {
+            task.MarkDownloading(Now);
+        }
+
+        var history = task.History.Count;
+
+        Assert.False(task.HoldForNetwork(Reason, Now));
+
+        Assert.Equal(from, task.State);
+        Assert.False(task.IsNetworkHeld);
+        Assert.Null(task.NetworkHoldReason);
+        Assert.Equal(history, task.History.Count);
     }
 
     [Theory]

@@ -7,5 +7,5 @@ namespace Cinomni.Decision.Application;
 internal static class ReleaseInfo
 {
     public static SelectedReleaseInfo Of(ReleaseCandidate candidate) =>
-        new(candidate.Title, candidate.IndexerName, candidate.Seeders, candidate.Leechers);
+        new(candidate.Title, candidate.IndexerName, candidate.Seeders, candidate.Leechers, candidate.Protocol.ToString());
 }

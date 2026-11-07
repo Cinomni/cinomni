@@ -2,6 +2,7 @@ using Cinomni.Downloads;
 using Cinomni.Downloads.Application;
 using Cinomni.Downloads.Contracts;
 using Cinomni.Downloads.Engine;
+using Cinomni.Downloads.Usenet;
 using Cinomni.Import;
 using Cinomni.Import.Application;
 using Cinomni.Import.Probe;
@@ -197,6 +198,21 @@ internal static class ModuleConfiguration
         options.PollInterval = Duration(section, "PollInterval", options.PollInterval);
         options.UnverifiedThreshold = Number(section, "UnverifiedThreshold", options.UnverifiedThreshold);
         options.VerifiedThreshold = Number(section, "VerifiedThreshold", options.VerifiedThreshold);
+    }
+
+    /// <summary>
+    /// Reads <c>Downloads:Usenet</c>. An empty host leaves Usenet off: a Usenet release then fails
+    /// with a named reason instead of being handed to the torrent engine. The password is read by
+    /// name only and is not logged.
+    /// </summary>
+    public static void ApplyUsenet(IConfiguration configuration, UsenetOptions options)
+    {
+        var section = configuration.GetSection("Downloads").GetSection("Usenet");
+        options.Host = Text(section, "Host")?.Trim() ?? options.Host;
+        options.Port = Number(section, "Port", options.Port);
+        options.UseTls = section.GetValue<bool?>("UseTls") ?? options.UseTls;
+        options.Username = Text(section, "Username") ?? options.Username;
+        options.Password = Text(section, "Password") ?? options.Password;
     }
 
     /// <summary>

@@ -7,6 +7,7 @@ using Cinomni.Downloads.EventHandlers;
 using Cinomni.Downloads.Messaging;
 using Cinomni.Downloads.Persistence;
 using Cinomni.Downloads.Streaming;
+using Cinomni.Downloads.Usenet;
 using Cinomni.Kernel.Diagnostics;
 using Cinomni.Kernel.Messaging;
 using Cinomni.Kernel.Net;
@@ -63,7 +64,8 @@ public static class DownloadsModule
         this IServiceCollection services,
         Action<DownloadRetentionOptions>? configureRetention = null,
         Action<TunnelOptions>? configureTunnel = null,
-        Action<TransferOptions>? configureTransfers = null)
+        Action<TransferOptions>? configureTransfers = null,
+        Action<UsenetOptions>? configureUsenet = null)
     {
         services.AddModuleDbContext<DownloadsDbContext>();
 
@@ -102,6 +104,21 @@ public static class DownloadsModule
         services.AddScoped<ICommandHandler<CheckTunnelCommand>, CheckTunnelCommandHandler>();
         services.AddScheduledJob<CheckTunnelCommand>(
             "downloads.tunnel-watch", DownloadCommandNames.CheckTunnel, tunnel.PollInterval);
+
+        // Registered whether a server is set or not: without one, the advance is what fails a queued
+        // Usenet release with that reason instead of leaving it queued.
+        var usenet = new UsenetOptions();
+        configureUsenet?.Invoke(usenet);
+        usenet.Validate();
+        services.AddSingleton(usenet);
+        services.AddScoped<UsenetDownloadService>();
+        services.AddCommand<AdvanceUsenetCommand>(DownloadCommandNames.AdvanceUsenet);
+        services.AddScoped<ICommandHandler<AdvanceUsenetCommand>, AdvanceUsenetCommandHandler>();
+        services.AddScheduledJob<AdvanceUsenetCommand>(
+            "downloads.usenet", DownloadCommandNames.AdvanceUsenet, TimeSpan.FromSeconds(15));
+        services
+            .AddHttpClient(UsenetDownloadService.ClientName, client => client.Timeout = FetchTimeout)
+            .ConfigurePrimaryHttpMessageHandler(CreateSsrfSafeHandler);
 
         var retention = new DownloadRetentionOptions();
         configureRetention?.Invoke(retention);
