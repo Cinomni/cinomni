@@ -71,7 +71,8 @@ criteria are met.
 
 - The accepted risks are retired: the VPN drop drill has run on a real tunnel, and at least one real
   GPU has passed the hardware test.
-- CI gates merges instead of advising.
+- CI gates merges instead of advising. Done: a ruleset on `main` requires the four checks, on a
+  branch that is up to date.
 - Several `0.x` upgrades have run unattended on real installations.
 - The release has been used day to day, not only tested.
 
@@ -113,7 +114,6 @@ reads the project as proving more than it does.
 |---|---|
 | **The VPN drop drill has never run on a real provider** | The kill-switch is covered by tests; a synthetic tunnel was measured and cannot stand in. The manual procedure waits in DEPLOYMENT.md §8 |
 | **No real GPU has passed the hardware test yet** | Detection, selection, argv and fallback are tested; a broken GPU still transcodes on the CPU. The drill is DEPLOYMENT.md §9 |
-| **CI advises rather than blocks** | The repository's plan has no branch protection. That is a plan decision, not an engineering one |
 
 ## Scope
 
@@ -139,7 +139,7 @@ Every increment clears the same bar:
 - Clean-room: no ported code; new dependencies registered.
 
 **Gates:** architecture 100% · security 0 critical · recovery scenarios green · clean-room 0 ported ·
-CI green (advisory, see the risks above).
+CI green (required to merge).
 
 ## How to help
 
@@ -885,7 +885,7 @@ host.
 <summary><b>Accepted risks in detail</b></summary>
 
 All seven M4 areas have landed, and the suite and the deployment have been confirmed on linux/amd64.
-Three things this repository cannot settle are **accepted rather than open**: they no longer block
+Three things this repository could not settle were **accepted rather than open**: they no longer block
 the milestone, and none is code. They are written down because an accepted risk that nobody records
 is indistinguishable from one nobody noticed.
 
@@ -901,9 +901,11 @@ is indistinguishable from one nobody noticed.
   found out. The failure mode is bounded by design (an installation whose hardware does not work as
   documented transcodes in software), which is what makes this an accepted risk rather than an open
   defect.
-- **The CI checks advise rather than gate.** The repository is private in an organisation on a plan
-  without branch protection (the API refuses with *"Upgrade to GitHub Pro or make this repository
-  public"*), so "CI green" is a report, not a gate. A plan decision, not an engineering one.
+- **The CI checks advised rather than gated.** The repository was private in an organisation on a
+  plan without branch protection (the API refused with *"Upgrade to GitHub Pro or make this repository
+  public"*), so "CI green" was a report, not a gate. **Retired:** the repository is public, and a
+  ruleset on `main` requires `web`, `gates`, `migrations` and `backend-integration` to pass on a
+  branch that is up to date with `main`, with squash or rebase merges only.
 
 Both smaller follow-ups from the confirmation pass are done:
 
