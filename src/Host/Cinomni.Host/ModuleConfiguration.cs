@@ -201,11 +201,6 @@ internal static class ModuleConfiguration
     }
 
     /// <summary>
-    /// Reads <c>Downloads:Transfers</c>: the stall timeout and the seeding rule new downloads get. A
-    /// seeding bound set to an empty value or <c>none</c> removes that bound; left out, it keeps the
-    /// default.
-    /// </summary>
-    /// <summary>
     /// Reads <c>Downloads:Usenet</c>. An empty host leaves Usenet off: a Usenet release then fails
     /// with a named reason instead of being handed to the torrent engine. The password is read by
     /// name only and is not logged.
@@ -220,6 +215,11 @@ internal static class ModuleConfiguration
         options.Password = Text(section, "Password") ?? options.Password;
     }
 
+    /// <summary>
+    /// Reads <c>Downloads:Transfers</c>: the stall timeout and the seeding rule new downloads get. A
+    /// seeding bound set to an empty value or <c>none</c> removes that bound; left out, it keeps the
+    /// default.
+    /// </summary>
     public static void ApplyTransfers(IConfiguration configuration, TransferOptions options)
     {
         var section = configuration.GetSection("Downloads").GetSection("Transfers");
