@@ -18,7 +18,7 @@ under the rules in *Versioning* below.
   logged. Usenet leaves over this machine's own connection; it is not the torrent tunnel. A packed
   release (rar or par2) is refused and not downloaded: unpacking and repair are not built, and Import
   does not accept an archive. No server configured, the release fails with that reason instead of
-  being fetched as a torrent. A server that stops answering is waited out for 15 minutes before the
+  being fetched as a torrent, and its NZB is not taken from the indexer. A server that stops answering is waited out for 15 minutes before the
   download fails, no call to it can wait for ever or read more than a part may hold, and the working
   files are removed once the download finishes or fails.
 

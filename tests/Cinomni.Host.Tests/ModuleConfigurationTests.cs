@@ -1,6 +1,7 @@
 using Cinomni.Downloads.Application;
 using Cinomni.Downloads.Contracts;
 using Cinomni.Downloads.Engine;
+using Cinomni.Downloads.Usenet;
 using Cinomni.Playback.Application;
 using Cinomni.Playback.Encoding;
 using Cinomni.Subtitles.Application;
@@ -83,6 +84,51 @@ public sealed class ModuleConfigurationTests
 
         Assert.False(options.IsConfigured);
         Assert.Equal(TunnelLossPolicy.Block, options.LossPolicy);
+        options.Validate();
+    }
+
+    [Fact]
+    public void The_usenet_server_comes_from_configuration()
+    {
+        var options = new UsenetOptions();
+
+        ModuleConfiguration.ApplyUsenet(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Downloads:Usenet:Host"] = " news.example.net ",
+                ["Downloads:Usenet:Port"] = "443",
+                ["Downloads:Usenet:UseTls"] = "false",
+                ["Downloads:Usenet:Username"] = "reader",
+                ["Downloads:Usenet:Password"] = "s3cret",
+            }),
+            options);
+
+        Assert.True(options.IsConfigured);
+        Assert.Equal("news.example.net", options.Host);
+        Assert.Equal(443, options.EffectivePort);
+        Assert.False(options.UseTls);
+        Assert.Equal("reader", options.Username);
+        Assert.Equal("s3cret", options.Password);
+        options.Validate();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void No_usenet_host_leaves_usenet_off_with_tls_on_its_port(string? host)
+    {
+        // The opt-in guarantee: an installation that sets no host has no server, so a Usenet release
+        // fails with that reason rather than going anywhere.
+        var options = new UsenetOptions();
+
+        ModuleConfiguration.ApplyUsenet(
+            Configuration(new Dictionary<string, string?> { ["Downloads:Usenet:Host"] = host }),
+            options);
+
+        Assert.False(options.IsConfigured);
+        Assert.True(options.UseTls);
+        Assert.Equal(563, options.EffectivePort);
         options.Validate();
     }
 

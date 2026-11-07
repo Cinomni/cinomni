@@ -100,6 +100,13 @@ public static class DownloadsModule
         // tunnel that has since been removed, which is the documented way back to a direct connection.
         // A job registered only while the guard is on would disappear exactly when it is needed, and
         // would leave an enabled row behind in the scheduler that no registration answers.
+        services.AddCommand<CheckTunnelCommand>(DownloadCommandNames.CheckTunnel);
+        services.AddScoped<ICommandHandler<CheckTunnelCommand>, CheckTunnelCommandHandler>();
+        services.AddScheduledJob<CheckTunnelCommand>(
+            "downloads.tunnel-watch", DownloadCommandNames.CheckTunnel, tunnel.PollInterval);
+
+        // Registered whether a server is set or not: without one, the advance is what fails a queued
+        // Usenet release with that reason instead of leaving it queued.
         var usenet = new UsenetOptions();
         configureUsenet?.Invoke(usenet);
         usenet.Validate();
@@ -112,11 +119,6 @@ public static class DownloadsModule
         services
             .AddHttpClient(UsenetDownloadService.ClientName, client => client.Timeout = FetchTimeout)
             .ConfigurePrimaryHttpMessageHandler(CreateSsrfSafeHandler);
-
-        services.AddCommand<CheckTunnelCommand>(DownloadCommandNames.CheckTunnel);
-        services.AddScoped<ICommandHandler<CheckTunnelCommand>, CheckTunnelCommandHandler>();
-        services.AddScheduledJob<CheckTunnelCommand>(
-            "downloads.tunnel-watch", DownloadCommandNames.CheckTunnel, tunnel.PollInterval);
 
         var retention = new DownloadRetentionOptions();
         configureRetention?.Invoke(retention);

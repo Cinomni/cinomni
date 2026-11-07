@@ -16,7 +16,8 @@ namespace Cinomni.Downloads.Usenet;
 
 /// <summary>
 /// Advances one Usenet download a short way, then returns. The torrent engine is never asked.
-/// A packed NZB is refused before any article is fetched. Progress is the parts already on disk,
+/// With no server set, it fails before the NZB is fetched. A packed NZB is refused before any
+/// article is fetched. Progress is the parts already on disk,
 /// so a tick that is run again does not fetch them twice.
 /// <para>
 /// A server that cannot be reached is waited out for <see cref="OutageGrace"/>, then the download
@@ -94,6 +95,15 @@ public sealed class UsenetDownloadService(
 
         // Before anything below changes the task: what the history gained is what this tick adds to it.
         var historyBefore = task.History.Count;
+
+        // Before the NZB is fetched: an indexer may count every NZB taken against a daily limit, and
+        // without a server nothing fetched here could be used.
+        if (!options.IsConfigured)
+        {
+            await FailAsync(task, historyBefore, NoServer, cancellationToken);
+            return;
+        }
+
         Directory.CreateDirectory(task.SavePath);
         NzbDocument document;
         try
@@ -110,12 +120,6 @@ public sealed class UsenetDownloadService(
         if (NzbPolicy.Refusal(document) is { } refusal)
         {
             await FailAsync(task, historyBefore, refusal, cancellationToken);
-            return;
-        }
-
-        if (!options.IsConfigured)
-        {
-            await FailAsync(task, historyBefore, NoServer, cancellationToken);
             return;
         }
 
@@ -323,6 +327,12 @@ public sealed class UsenetDownloadService(
     /// </summary>
     private void DiscardScratch(string savePath)
     {
+        if (!Directory.Exists(savePath))
+        {
+            // Settled before anything was written, as when no server is set.
+            return;
+        }
+
         var parts = Path.Combine(savePath, PartsFolder);
         try
         {

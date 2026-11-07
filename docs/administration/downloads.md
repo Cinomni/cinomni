@@ -38,7 +38,8 @@ re-adding it would download again whatever has been removed from the downloads f
 ## Usenet
 
 A Newznab release is not given to the torrent engine. Set these on the `cinomni` service if you want
-that release downloaded. Leave the host empty and a Usenet release fails with that reason.
+that release downloaded. Leave the host empty and a Usenet release fails with that reason before its
+NZB is taken from the indexer, so none of the indexer's NZB downloads is spent on it.
 
 | Setting | Meaning |
 |---|---|
